@@ -11,6 +11,7 @@ import fi.dy.masa.malilib.gui.widgets.WidgetBase;
 import fi.dy.masa.malilib.gui.widgets.WidgetDropDownList;
 import fi.dy.masa.malilib.render.GuiContext;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
@@ -156,23 +157,33 @@ public final class ParamInputScreen extends GuiBase {
         int sh = this.getScreenHeight();
         int contentBottom = sh - BOTTOM_MARGIN;
 
-        // 左侧说明面板背景
-        int labelPanelW = rows.isEmpty() ? 0 : rows.get(0).labelPanelW;
-        ctx.fill(0, TOP_MARGIN, labelPanelW, contentBottom, 0x20FFFFFF);
-
-        // 绘制参数说明（不使用裁剪，保证左侧说明始终可见）
-        for (ParamRow row : rows) {
-            int y = row.baseY - scrollOffset;
-            if (y + ROW_H < TOP_MARGIN || y > contentBottom) continue;
-            drawRowLabels(ctx, row, y);
-        }
-
         // 滚动条
         drawScrollbar(ctx, sw - 8, TOP_MARGIN, 6, contentBottom - TOP_MARGIN);
 
         // 无内容提示
         if (params.isEmpty()) {
-            ctx.drawCenteredString(this.font, "该用法无需参数", sw / 2, TOP_MARGIN + 20, 0xAAAAAA);
+            ctx.drawCenteredString(this.font, "该用法无需参数", sw / 2, TOP_MARGIN + 20, 0xFFAAAAAA);
+        }
+    }
+
+    @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTicks) {
+        super.render(g, mouseX, mouseY, partialTicks);
+
+        // 在顶层绘制参数说明，避免被裁剪/层级遮挡
+        GuiContext ctx = GuiContext.fromGuiGraphics(g);
+
+        int sh = this.getScreenHeight();
+        int contentBottom = sh - BOTTOM_MARGIN;
+        int labelPanelW = rows.isEmpty() ? 0 : rows.get(0).labelPanelW;
+
+        // 左侧说明面板背景（更明显的半透明深色）
+        ctx.fill(0, TOP_MARGIN, labelPanelW, contentBottom, 0x30FFFFFF);
+
+        for (ParamRow row : rows) {
+            int y = row.baseY - scrollOffset;
+            if (y + ROW_H < TOP_MARGIN || y > contentBottom) continue;
+            drawRowLabels(ctx, row, y);
         }
     }
 
@@ -183,7 +194,7 @@ public final class ParamInputScreen extends GuiBase {
         String desc = getParamDescription(param);
 
         // 参数名（加粗白色）
-        ctx.drawString(this.font, name, row.labelX, y + 4, 0xFFFFFF);
+        ctx.drawString(this.font, name, row.labelX, y + 4, 0xFFFFFFFF);
 
         // 详细说明（浅灰）
         if (!desc.isEmpty()) {
@@ -191,7 +202,7 @@ public final class ParamInputScreen extends GuiBase {
             int lineY = y + 18;
             for (String line : wrapped.split("\n")) {
                 if (lineY + 8 > y + ROW_H - 2) break;
-                ctx.drawString(this.font, "§7" + line, row.labelX, lineY, 0xAAAAAA);
+                ctx.drawString(this.font, "§7" + line, row.labelX, lineY, 0xFFAAAAAA);
                 lineY += 10;
             }
         }

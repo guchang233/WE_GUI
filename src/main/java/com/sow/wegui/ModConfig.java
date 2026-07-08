@@ -21,7 +21,6 @@ public final class ModConfig {
 
     // ── 字段 ──
     public String triggerItem = "minecraft:wooden_axe";
-    public int extraKey = -1;                         // GLFW key code，-1 = 仅 Alt
     public int wheelSlotCount = 8;                     // 每个轮盘默认槽位数
     public int holdThresholdMs = 250;                  // 短按/长按阈值
     public int activeWheelIndex = 0;

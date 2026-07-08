@@ -116,7 +116,7 @@ public final class MainPanelScreen extends GuiListBase<WeCommand, WidgetCommandE
 
         GuiContext ctx = GuiContext.fromGuiGraphics(g);
         int cx = this.getScreenWidth() / 2;
-        this.drawString(ctx, "§7触发物品: §f" + WeGuiConfigs.getTriggerItem(), cx - 80, this.getScreenHeight() - 48, 0xAAAAAA);
+        this.drawString(ctx, "§7触发物品: §f" + WeGuiConfigs.getTriggerItem(), cx - 80, this.getScreenHeight() - 48, 0xFFAAAAAA);
     }
 
     private void onCommandClicked(WeCommand cmd) {

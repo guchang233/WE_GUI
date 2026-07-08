@@ -10,9 +10,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
 
@@ -29,7 +27,6 @@ public final class SettingsScreen extends Screen {
     // 轮盘编辑状态
     private int selectedWheelIndex = 0;
     private int editingSlotIndex = -1;
-    private boolean capturingKey = false;
 
     // 全局配置控件
     private EditBox line1Box, line2Box;
@@ -44,7 +41,6 @@ public final class SettingsScreen extends Screen {
         leftW = 140;
         rightX = leftW + 4;
         rightW = this.width - rightX - 4;
-        capturingKey = false;
         if (tab == Tab.WHEELS) initWheelsTab();
         else initGlobalTab();
     }
@@ -202,17 +198,6 @@ public final class SettingsScreen extends Screen {
         addRenderableWidget(triggerBox);
         y += 30;
 
-        // 额外键
-        String kl = ModConfig.get().extraKey < 0 ? "无" : keyName(ModConfig.get().extraKey);
-        addRenderableWidget(Button.builder(
-                capturingKey ? Component.literal("§e按任意键...") : Component.literal("额外键: " + kl), b -> {
-            capturingKey = true; init();
-        }).bounds(cx - 80, y, 120, 16).build());
-        addRenderableWidget(Button.builder(Component.literal("清除"), b -> {
-            ModConfig.get().extraKey = -1; ModConfig.save(); init();
-        }).bounds(cx + 44, y, 40, 16).build());
-        y += 30;
-
         // 槽位数
         addRenderableWidget(Button.builder(Component.literal("-"), b -> {
             ModConfig.get().setWheelSlotCount(ModConfig.get().wheelSlotCount - 1); init();
@@ -221,11 +206,6 @@ public final class SettingsScreen extends Screen {
             ModConfig.get().setWheelSlotCount(ModConfig.get().wheelSlotCount + 1); init();
         }).bounds(cx - 48, y, 28, 16).build());
         y += 30;
-
-        // 提示：Alt 按下切换
-        addRenderableWidget(Button.builder(Component.literal("§7Alt 切换"), b -> {})
-                .bounds(cx - 80, y, 160, 16).build());
-        y += 22;
 
         // 状态栏位置
         ModConfig.Anchor[] anchors = ModConfig.Anchor.values();
@@ -287,42 +267,22 @@ public final class SettingsScreen extends Screen {
     public void render(GuiGraphics g, int mx, int my, float pt) {
         super.render(g, mx, my, pt);
         if (tab == Tab.GLOBAL) renderGlobalLabels(g);
-        g.drawCenteredString(this.font, "§8WE GUI 设置", this.width / 2, 8, 0xFFFFFF);
+        g.drawCenteredString(this.font, "§8WE GUI 设置", this.width / 2, 8, 0xFFFFFFFF);
     }
 
     private void renderGlobalLabels(GuiGraphics g) {
         int cx = this.width / 2, y = 22;
-        g.drawString(this.font, "触发工具", cx - 90, y, 0x888888); y += 30;
-        g.drawString(this.font, "额外组合键", cx - 90, y, 0x888888); y += 30;
-        g.drawString(this.font, "槽位数: " + ModConfig.get().wheelSlotCount, cx - 90, y, 0x888888); y += 30;
-        g.drawString(this.font, "触发: Alt 按下切换", cx - 90, y, 0x888888); y += 24;
-        g.drawString(this.font, "状态栏位置", cx - 90, y, 0x888888); y += 30;
+        g.drawString(this.font, "触发工具", cx - 90, y, 0xFF888888); y += 30;
+        g.drawString(this.font, "槽位数: " + ModConfig.get().wheelSlotCount, cx - 90, y, 0xFF888888); y += 30;
+        g.drawString(this.font, "状态栏位置", cx - 90, y, 0xFF888888); y += 30;
         g.drawString(this.font, "偏移 X:" + ModConfig.get().statusBarOffsetX
-                + " Y:" + ModConfig.get().statusBarOffsetY, cx - 90, y, 0x888888); y += 30;
-        g.drawString(this.font, "状态栏格式", cx - 90, y, 0x888888);
+                + " Y:" + ModConfig.get().statusBarOffsetY, cx - 90, y, 0xFF888888); y += 30;
+        g.drawString(this.font, "状态栏格式", cx - 90, y, 0xFF888888);
         g.drawString(this.font, "§7可用: {size} {count} {width} {height} {length} {clipboard} {version}",
-                cx - 80, y + 42, 0x666666);
+                cx - 80, y + 42, 0xFF666666);
     }
 
     // ════════════════════ 按键捕获 ════════════════════
-
-    @Override
-    public boolean keyPressed(KeyEvent event) {
-        if (capturingKey) {
-            int code = event.key();
-            if (code == GLFW.GLFW_KEY_ESCAPE || code == GLFW.GLFW_KEY_LEFT_ALT || code == GLFW.GLFW_KEY_RIGHT_ALT) {
-                capturingKey = false;
-                init();
-                return true;
-            }
-            ModConfig.get().extraKey = code;
-            ModConfig.save();
-            capturingKey = false;
-            init();
-            return true;
-        }
-        return super.keyPressed(event);
-    }
 
     @Override
     public boolean isPauseScreen() { return false; }
@@ -334,14 +294,6 @@ public final class SettingsScreen extends Screen {
     }
 
     // ── 工具 ──
-    private static String keyName(int code) {
-        try {
-            return GLFW.glfwGetKeyName(code, 0);
-        } catch (Exception e) {
-            return "#" + code;
-        }
-    }
-
     private static String anchorLabel(ModConfig.Anchor a) {
         return switch (a) {
             case TOP_LEFT -> "左上";

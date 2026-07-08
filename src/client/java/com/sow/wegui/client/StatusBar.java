@@ -71,7 +71,7 @@ public final class StatusBar {
 
         g.fill(x, y, x + pw, y + ph, 0x55000000);
         g.fill(x, y, x + 1, y + ph, 0xFF4A90D9);
-        g.drawString(font, line1, x + 4, y + 2, 0xFFFFFF);
-        if (!line2.isEmpty()) g.drawString(font, line2, x + 4, y + 12, 0xAAAAAA);
+        g.drawString(font, line1, x + 4, y + 2, 0xFFFFFFFF);
+        if (!line2.isEmpty()) g.drawString(font, line2, x + 4, y + 12, 0xFFAAAAAA);
     }
 }

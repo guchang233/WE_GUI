@@ -17,16 +17,11 @@ import net.minecraft.resources.Identifier;
  * 按键与配置迁移到 MaLiLib 管理。
  */
 public final class WeGuiClient implements ClientModInitializer {
-    private static AltKeyHandler altHandler;
-
     @Override
     public void onInitializeClient() {
         ModConfig.load();
         WeGuiConfigs.init();
         WeGuiInputHandler.register();
-
-        altHandler = new AltKeyHandler();
-        altHandler.register();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             StatusBar.tick(client);

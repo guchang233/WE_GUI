@@ -67,6 +67,6 @@ public final class WidgetCheckBox extends WidgetBase {
         }
 
         // 标签
-        this.drawString(ctx, x + BOX_SIZE + 4, y + 1, 0xFFFFFF, label);
+        this.drawString(ctx, x + BOX_SIZE + 4, y + 1, 0xFFFFFFFF, label);
     }
 }
