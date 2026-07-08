@@ -40,6 +40,20 @@ public final class StatusBar {
         String line1 = cached.format(ModConfig.get().statusBarLine1);
         String line2 = cached.format(ModConfig.get().statusBarLine2);
 
+        // 当用户把格式字符串留空时，使用默认提示，保证状态信息不为空
+        if (line1.isEmpty()) {
+            line1 = cached.type() == WeStatusSnapshot.StatusType.NO_WORLDEDIT
+                    ? "§cWorldEdit 未加载"
+                    : (cached.type() == WeStatusSnapshot.StatusType.NO_SELECTION
+                            ? "§8无选区"
+                            : cached.format("{size}"));
+        }
+        if (line2.isEmpty()) {
+            line2 = cached.type() == WeStatusSnapshot.StatusType.READY
+                    ? cached.format("§7方块: {count}  剪贴板: {clipboard}")
+                    : cached.format("§7剪贴板: {clipboard}");
+        }
+
         int w1 = font.width(line1), w2 = font.width(line2);
         int pw = Math.max(w1, w2) + 8;
         int ph = line2.isEmpty() ? 12 : 22;

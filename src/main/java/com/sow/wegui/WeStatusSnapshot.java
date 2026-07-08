@@ -36,7 +36,7 @@ public record WeStatusSnapshot(
         if (pattern == null || pattern.isBlank()) return "";
         String size, count;
         if (type == StatusType.NO_WORLDEDIT) {
-            size = "§c×";
+            size = "§c未加载";
             count = "-";
         } else if (type == StatusType.NO_SELECTION) {
             size = "§8无选区";

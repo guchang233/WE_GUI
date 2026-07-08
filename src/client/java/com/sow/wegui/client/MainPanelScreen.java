@@ -42,13 +42,13 @@ public final class MainPanelScreen extends GuiBase {
 
             int y = startY + i * (BTN_H + PAD);
             String label = cat.getDisplayName() + " §8(" + count + ")";
-            ButtonGeneric btn = new ButtonGeneric(x, y, CAT_W, BTN_H, label);
+            ButtonGeneric btn = new ButtonNoScroll(x, y, CAT_W, BTN_H, label);
             this.addButton(btn, new CategoryButtonListener(cat));
         }
 
         // 底部按钮
         int bottomY = this.getScreenHeight() - 30;
-        ButtonGeneric closeBtn = new ButtonGeneric(cx - 50, bottomY, 100, BTN_H, "关闭");
+        ButtonGeneric closeBtn = new ButtonNoScroll(cx - 50, bottomY, 100, BTN_H, "关闭");
         this.addButton(closeBtn, (button, mouseButton) -> {
             if (this.getParent() != null) {
                 this.mc.setScreen(this.getParent());

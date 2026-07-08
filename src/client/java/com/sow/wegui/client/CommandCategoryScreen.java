@@ -5,31 +5,47 @@ import com.sow.wegui.WeCommandCategory;
 import com.sow.wegui.WeCommandRegistry;
 import com.sow.wegui.WeCommandType;
 import com.sow.wegui.WeCommandUsage;
+import com.sow.wegui.client.widget.WidgetCommandEntry;
+import com.sow.wegui.client.widget.WidgetCommandList;
 import fi.dy.masa.malilib.gui.GuiBase;
+import fi.dy.masa.malilib.gui.GuiListBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
-import fi.dy.masa.malilib.gui.button.IButtonActionListener;
-import fi.dy.masa.malilib.render.GuiContext;
+import fi.dy.masa.malilib.gui.interfaces.ISelectionListener;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
 /**
- * 分类命令列表 —— 显示某一分类下的所有 WeCommand。
+ * 分类命令列表界面 —— 使用 malilib 可滚动列表，自适应屏幕尺寸。
  */
-public final class CommandCategoryScreen extends GuiBase {
-    private static final int BTN_H = 18;
-    private static final int PAD = 4;
-    private static final int COLS = 3;
+public final class CommandCategoryScreen extends GuiListBase<WeCommand, WidgetCommandEntry, WidgetCommandList> {
+    private static final int TOP_MARGIN = 40;
+    private static final int BOTTOM_MARGIN = 36;
 
     private final WeCommandCategory category;
-    private final List<WeCommand> commands;
 
     public CommandCategoryScreen(WeCommandCategory category) {
-        super();
+        super(10, TOP_MARGIN);
         this.category = category;
-        this.commands = WeCommandRegistry.getByCategory(category);
         this.setTitle(category.getDisplayName());
+    }
+
+    @Override
+    protected WidgetCommandList createListWidget(int x, int y) {
+        return new WidgetCommandList(x, y, getBrowserWidth(), getBrowserHeight(),
+                getSelectionListener(), WeCommandRegistry.getByCategory(category), this::onCommandClicked);
+    }
+
+    @Override
+    protected int getBrowserWidth() {
+        int sw = this.getScreenWidth();
+        return Math.max(200, Math.min(520, sw - 40));
+    }
+
+    @Override
+    protected int getBrowserHeight() {
+        return Math.max(80, this.getScreenHeight() - TOP_MARGIN - BOTTOM_MARGIN);
     }
 
     @Override
@@ -38,76 +54,50 @@ public final class CommandCategoryScreen extends GuiBase {
 
         int sw = this.getScreenWidth();
         int sh = this.getScreenHeight();
-        int marginX = 20;
-        int marginY = 40;
-        int bottomH = 30;
+        int cy = sw / 2;
+        int y = sh - 26;
 
-        int usableW = sw - marginX * 2;
-        int btnW = (usableW - (COLS - 1) * PAD) / COLS;
-        int maxRows = Math.max(1, (sh - marginY - bottomH) / (BTN_H + PAD));
+        ButtonGeneric back = new ButtonNoScroll(cy - 80, y, 75, 18, "返回");
+        ButtonGeneric close = new ButtonNoScroll(cy + 5, y, 75, 18, "关闭");
 
-        for (int i = 0; i < commands.size(); i++) {
-            WeCommand cmd = commands.get(i);
-            int col = i % COLS;
-            int row = i / COLS;
-            int x = marginX + col * (btnW + PAD);
-            int y = marginY + row * (BTN_H + PAD);
-
-            String typeMark = cmd.type() == WeCommandType.PARAMETRIC ? "§7[参] "
-                    : cmd.type() == WeCommandType.BIND ? "§7[绑] " : "§7[即] ";
-            ButtonGeneric btn = new ButtonGeneric(x, y, btnW, BTN_H, cmd.displayName(),
-                    typeMark + cmd.description());
-            this.addButton(btn, new CommandButtonListener(cmd));
-        }
-
-        // 底部按钮
-        int cx = sw / 2;
-        int bottomY = sh - 24;
-        ButtonGeneric backBtn = new ButtonGeneric(cx - 80, bottomY, 75, BTN_H, "返回");
-        ButtonGeneric closeBtn = new ButtonGeneric(cx + 5, bottomY, 75, BTN_H, "关闭");
-        this.addButton(backBtn, (button, mouseButton) -> this.mc.setScreen(this.getParent()));
-        this.addButton(closeBtn, (button, mouseButton) -> this.mc.setScreen(null));
+        this.addButton(back, (btn, mb) -> GuiBase.openGui(this.getParent() != null ? this.getParent() : new MainPanelScreen()));
+        this.addButton(close, (btn, mb) -> Minecraft.getInstance().setScreen(null));
     }
 
     @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTicks) {
-        super.render(g, mouseX, mouseY, partialTicks);
-
-        GuiContext ctx = GuiContext.fromGuiGraphics(g);
-        int cx = this.getScreenWidth() / 2;
-        String title = "§b§l" + category.getDisplayName();
-        this.drawStringWithShadow(ctx, title, cx - this.getStringWidth(title) / 2, 18, 0xFFFFFF);
-        this.drawString(ctx, "§7共 " + commands.size() + " 条命令", cx - 40, 32, 0xAAAAAA);
+    protected ISelectionListener<WeCommand> getSelectionListener() {
+        return null;
     }
 
-    private record CommandButtonListener(WeCommand command) implements IButtonActionListener {
-        @Override
-        public void actionPerformedWithButton(fi.dy.masa.malilib.gui.button.ButtonBase button, int mouseButton) {
-            Minecraft mc = Minecraft.getInstance();
-            if (command.isSingleUsage()) {
-                WeCommandUsage usage = command.usages().get(0);
-                if (usage.params().isEmpty() && usage.type() == WeCommandType.INSTANT) {
-                    executeInstant(mc, usage);
-                } else {
-                    GuiBase.openGui(new ParamInputScreen(command, usage));
-                }
+    private void onCommandClicked(WeCommand cmd) {
+        Minecraft mc = Minecraft.getInstance();
+        if (cmd.usages().size() == 1) {
+            WeCommandUsage usage = cmd.usages().get(0);
+            if (usage.type() == WeCommandType.INSTANT) {
+                executeInstant(usage);
             } else {
-                GuiBase.openGui(new UsageSelectionScreen(command));
+                GuiBase.openGui(new ParamInputScreen(cmd, usage));
             }
+        } else {
+            GuiBase.openGui(new UsageSelectionScreen(cmd));
         }
+    }
 
-        private void executeInstant(Minecraft mc, WeCommandUsage usage) {
-            WeOperation op = WeOperationRegistry.get(usage.id());
-            if (op != null) {
-                op.execute(mc, usage, List.of());
-            } else {
-                if (mc.player != null) {
-                    mc.player.displayClientMessage(
-                            net.minecraft.network.chat.Component.literal(
-                                    "§c[WE GUI] §f该功能尚未通过 API 实现: " + usage.displayTemplate()), false);
-                }
-            }
-            mc.setScreen(null);
+    private void executeInstant(WeCommandUsage usage) {
+        Minecraft mc = Minecraft.getInstance();
+        WeOperation op = WeOperationRegistry.get(usage.id());
+        if (op != null) {
+            op.execute(mc, usage, List.of());
+        } else {
+            error("操作未实现: " + usage.id());
+        }
+        mc.setScreen(null);
+    }
+
+    private void error(String msg) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) {
+            mc.player.displayClientMessage(Component.literal("§c[WE GUI] " + msg), false);
         }
     }
 }

@@ -7,245 +7,341 @@ import com.sow.wegui.WeParamType;
 import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.gui.GuiTextFieldGeneric;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
+import fi.dy.masa.malilib.gui.widgets.WidgetBase;
 import fi.dy.masa.malilib.gui.widgets.WidgetDropDownList;
 import fi.dy.masa.malilib.render.GuiContext;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 参数输入界面 —— 使用 MaLiLib 的 GuiBase。
- * 根据命令用法的参数定义动态渲染输入控件。
+ * 参数输入界面 —— 左侧显示参数说明，右侧为输入控件与可选参数勾选框。
+ * 支持内容区域滚动，滚动不会触发按钮点击。
  */
 public final class ParamInputScreen extends GuiBase {
-    private static final int ROW_H = 24;
-    private static final int LABEL_W = 120;
-    private static final int INPUT_W = 220;
-    private static final int CHECK_W = 70;
+    private static final int TOP_MARGIN = 55;
+    private static final int BOTTOM_MARGIN = 42;
+    private static final int ROW_H = 46;
+    private static final int LABEL_W = 160;
+    private static final int INPUT_W = 240;
+    private static final int SCROLL_SPEED = 18;
 
     private final WeCommand command;
     private final WeCommandUsage usage;
     private final List<WeCommandParam> params;
-
-    private final List<GuiTextFieldGeneric> textFields = new ArrayList<>();
-    private final List<WidgetDropDownList<String>> dropDowns = new ArrayList<>();
-    private final List<WidgetCheckBox> checkBoxes = new ArrayList<>();
+    private final List<ParamRow> rows = new ArrayList<>();
+    private int scrollOffset = 0;
+    private int contentHeight = 0;
 
     public ParamInputScreen(WeCommand command, WeCommandUsage usage) {
         super();
         this.command = command;
         this.usage = usage;
         this.params = usage.params();
-        this.setTitle(command.displayName() + " — 参数");
+        this.setTitle(usage.displayTemplate());
     }
 
     @Override
     public void initGui() {
         super.initGui();
+        rows.clear();
+        scrollOffset = 0;
 
-        textFields.clear();
-        dropDowns.clear();
-        checkBoxes.clear();
+        int sw = this.getScreenWidth();
+        int sh = this.getScreenHeight();
+        int inputX = Math.min(sw - INPUT_W - 20, Math.max(LABEL_W + 30, sw / 2 - 10));
+        int labelX = inputX - LABEL_W - 12;
 
-        int cx = this.getScreenWidth() / 2;
-        int startY = 70;
-        int labelX = cx - LABEL_W - 12;
-        int inputX = cx - 4;
-
+        int y = TOP_MARGIN;
         for (int i = 0; i < params.size(); i++) {
             WeCommandParam param = params.get(i);
-            int y = startY + i * (ROW_H + 8);
+            rows.add(createRow(param, i, labelX, inputX, y));
+            y += ROW_H;
+        }
+        contentHeight = params.size() * ROW_H + 8;
 
-            if (param.optional()) {
-                WidgetCheckBox cb = new WidgetCheckBox(inputX + INPUT_W + 8, y + 4, CHECK_W, ROW_H, "启用", false);
-                this.addWidget(cb);
-                checkBoxes.add(cb);
+        // 底部操作按钮
+        int cx = sw / 2;
+        int btnY = sh - 28;
+        ButtonGeneric exec = new ButtonNoScroll(cx - 82, btnY, 78, 20, "执行");
+        ButtonGeneric preview = new ButtonNoScroll(cx - 2, btnY, 78, 20, "预览命令");
+        ButtonGeneric back = new ButtonNoScroll(cx + 78, btnY, 78, 20, "返回");
+
+        this.addButton(exec, (btn, mb) -> execute(false));
+        this.addButton(preview, (btn, mb) -> execute(true));
+        this.addButton(back, (btn, mb) -> {
+            if (command.usages().size() > 1) {
+                GuiBase.openGui(new UsageSelectionScreen(command));
             } else {
-                checkBoxes.add(null);
+                GuiBase.openGui(new CommandCategoryScreen(command.category()));
             }
-
-            createInput(param, inputX, y);
-        }
-
-        int btnY = startY + params.size() * (ROW_H + 8) + 24;
-        ButtonGeneric execBtn = new ButtonGeneric(cx - 110, btnY, 100, 20, "§a执行");
-        ButtonGeneric backBtn = new ButtonGeneric(cx + 10, btnY, 70, 20, "§7返回");
-        ButtonGeneric resetBtn = new ButtonGeneric(cx + 85, btnY, 70, 20, "§7重置");
-
-        this.addButton(execBtn, (button, mouseButton) -> execute());
-        this.addButton(backBtn, (button, mouseButton) -> this.mc.setScreen(this.getParent()));
-        this.addButton(resetBtn, (button, mouseButton) -> reset());
+        });
     }
 
-    private void createInput(WeCommandParam param, int x, int y) {
-        WeParamType type = param.paramType();
-        String defaultValue = param.defaultValue() != null ? param.defaultValue() : "";
+    private ParamRow createRow(WeCommandParam param, int index, int labelX, int inputX, int baseY) {
+        Object input = null;
+        WidgetCheckBox checkBox = null;
 
-        // 固定参数不渲染输入控件，仅显示标签即可
-        if (type == WeParamType.FIXED) {
-            textFields.add(null);
-            dropDowns.add(null);
-            return;
-        }
-
-        // 下拉选项型参数
-        if (type == WeParamType.ENUM || type == WeParamType.DIRECTION
-                || type == WeParamType.RELATIVE_DIRECTION || type == WeParamType.AXIS
-                || type == WeParamType.BOOLEAN) {
-            List<String> options = buildOptions(param, type);
-            if (!options.isEmpty()) {
-                WidgetDropDownList<String> dd = new WidgetDropDownList<>(x, y, INPUT_W, ROW_H, 120, 5, options);
-                String initial = options.contains(defaultValue) ? defaultValue : options.get(0);
-                dd.setSelectedEntry(initial);
-                this.addWidget(dd);
-                textFields.add(null);
-                dropDowns.add(dd);
-                return;
+        if (param.paramType() == WeParamType.ENUM && !param.options().isEmpty()) {
+            WidgetDropDownList<String> drop = new WidgetDropDownList<>(inputX, baseY, INPUT_W, 18, 120, 5, param.options());
+            drop.setSelectedEntry(param.defaultValue() != null ? param.defaultValue() : param.options().get(0));
+            this.addWidget(drop);
+            input = drop;
+        } else {
+            GuiTextFieldGeneric field = new GuiTextFieldGeneric(inputX, baseY, INPUT_W, 18, this.font);
+            field.setMaxLength(256);
+            String placeholder = param.defaultValue() != null ? param.defaultValue()
+                    : (param.hint() != null ? param.hint() : "");
+            if (placeholder != null && !placeholder.isEmpty()) {
+                field.setHint(Component.literal("§7" + placeholder));
             }
-            // 没有预定义选项时回退到文本框（如 AXIS 的自由输入）
+            this.addTextField(field, null);
+            input = field;
         }
 
-        GuiTextFieldGeneric field = new GuiTextFieldGeneric(x, y, INPUT_W, ROW_H, this.font);
-        field.setValue(defaultValue);
-        field.setHint(Component.literal(param.hint() != null && !param.hint().isBlank() ? param.hint() : param.name()));
-        if (type == WeParamType.INTEGER || type == WeParamType.DECIMAL) {
-            field.setFilter(s -> s.matches("-?\\d*\\.?\\d*"));
+        if (param.optional()) {
+            checkBox = new WidgetCheckBox(inputX + INPUT_W + 10, baseY + 2, 14, 14, "启用", false);
+            this.addWidget(checkBox);
         }
-        this.addTextField(field, null);
-        textFields.add(field);
-        dropDowns.add(null);
+
+        return new ParamRow(param, index, labelX, inputX, baseY, input, checkBox);
     }
 
-    private List<String> buildOptions(WeCommandParam param, WeParamType type) {
-        if (type == WeParamType.BOOLEAN) {
-            return List.of("true", "false");
-        }
-        List<String> opts = new ArrayList<>(param.options());
-        if (type == WeParamType.AXIS && opts.isEmpty()) {
-            opts = new ArrayList<>(List.of("north", "south", "east", "west", "up", "down", "forward", "0,1,0"));
-        }
-        return opts;
+    /**
+     * 在基类渲染控件前同步所有输入控件的 Y 坐标（跟随滚动），并用裁剪限制在内容区。
+     */
+    @Override
+    protected void drawWidgets(GuiContext ctx, int mouseX, int mouseY) {
+        updateInputPositions();
+        applyContentScissor(ctx);
+        super.drawWidgets(ctx, mouseX, mouseY);
+        ctx.disableScissor();
     }
 
-    private List<String> collectValues() {
-        List<String> values = new ArrayList<>();
-        for (int i = 0; i < params.size(); i++) {
-            WeCommandParam param = params.get(i);
-            WidgetCheckBox cb = checkBoxes.get(i);
+    /**
+     * 在基类渲染文本框前再次同步文本框 Y 坐标，并用裁剪限制在内容区。
+     */
+    @Override
+    protected void drawTextFields(GuiContext ctx, int mouseX, int mouseY) {
+        updateInputPositions();
+        applyContentScissor(ctx);
+        super.drawTextFields(ctx, mouseX, mouseY);
+        ctx.disableScissor();
+    }
 
-            if (cb != null && !cb.isChecked()) {
-                values.add("");
+    private void applyContentScissor(GuiContext ctx) {
+        int sw = this.getScreenWidth();
+        int sh = this.getScreenHeight();
+        ctx.enableScissor(0, TOP_MARGIN, sw, sh - BOTTOM_MARGIN);
+    }
+
+    private void updateInputPositions() {
+        for (ParamRow row : rows) {
+            int y = row.baseY - scrollOffset;
+            if (row.input instanceof GuiTextFieldGeneric field) {
+                field.setY(y + 2);
+            } else if (row.input instanceof WidgetBase widget) {
+                widget.setY(y + 2);
+            }
+            if (row.checkBox != null) {
+                row.checkBox.setY(y + 2);
+            }
+        }
+    }
+
+    @Override
+    protected void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTicks) {
+        int sw = this.getScreenWidth();
+        int sh = this.getScreenHeight();
+        int contentBottom = sh - BOTTOM_MARGIN;
+
+        // 内容区域滚动裁剪
+        ctx.enableScissor(0, TOP_MARGIN, sw, contentBottom);
+        for (ParamRow row : rows) {
+            int y = row.baseY - scrollOffset;
+            if (y + ROW_H < TOP_MARGIN || y > contentBottom) continue;
+            drawRowLabels(ctx, row, y);
+        }
+        ctx.disableScissor();
+
+        // 滚动条
+        drawScrollbar(ctx, sw - 8, TOP_MARGIN, 6, contentBottom - TOP_MARGIN);
+
+        // 无内容提示
+        if (params.isEmpty()) {
+            ctx.drawCenteredString(this.font, "该用法无需参数", sw / 2, TOP_MARGIN + 20, 0xAAAAAA);
+        }
+    }
+
+    private void drawRowLabels(GuiContext ctx, ParamRow row, int y) {
+        WeCommandParam param = row.param;
+        String reqMark = param.optional() ? "§8[可选]" : "§c*";
+        String name = reqMark + " §f" + param.name();
+        String desc = param.description();
+        // 无详细说明时，使用输入提示作为回退，避免说明区域为空
+        if (desc == null || desc.isBlank()) {
+            desc = param.hint() != null ? param.hint() : "";
+        }
+
+        // 参数名
+        ctx.drawString(this.font, name, row.labelX, y + 2, 0xFFFFFF);
+        // 详细说明（换行截断）
+        if (!desc.isEmpty()) {
+            String wrapped = wrapText(desc, LABEL_W);
+            int lineY = y + 14;
+            for (String line : wrapped.split("\n")) {
+                if (lineY + 8 > y + ROW_H - 2) break;
+                ctx.drawString(this.font, "§7" + line, row.labelX, lineY, 0xAAAAAA);
+                lineY += 10;
+            }
+        }
+    }
+
+    private String wrapText(String text, int maxWidth) {
+        if (this.font.width(text) <= maxWidth) return text;
+        StringBuilder result = new StringBuilder();
+        StringBuilder line = new StringBuilder();
+        for (String word : text.split("(?<=\\s)|(?=\\s)")) {
+            if (word.isEmpty()) continue;
+            // 单个词过长时按字符折断（适配中文无空格文本）
+            if (this.font.width(word) > maxWidth) {
+                for (int i = 0; i < word.length(); ) {
+                    int cp = word.codePointAt(i);
+                    String ch = new String(Character.toChars(cp));
+                    if (this.font.width(line + ch) > maxWidth && line.length() > 0) {
+                        flushLine(result, line);
+                    }
+                    line.append(ch);
+                    i += Character.charCount(cp);
+                }
                 continue;
             }
-
-            if (param.paramType() == WeParamType.FIXED) {
-                values.add(param.defaultValue() != null ? param.defaultValue() : "");
-                continue;
+            if (this.font.width(line + word) > maxWidth && line.length() > 0) {
+                flushLine(result, line);
             }
-
-            WidgetDropDownList<String> dd = dropDowns.get(i);
-            if (dd != null) {
-                String val = dd.getSelectedEntry();
-                values.add(val != null ? val : "");
-                continue;
-            }
-
-            GuiTextFieldGeneric field = textFields.get(i);
-            values.add(field != null ? field.getValue().trim() : "");
+            line.append(word);
         }
-        return values;
+        flushLine(result, line);
+        return result.toString();
     }
 
-    private String previewCommand() {
-        return usage.buildCommand(collectValues());
+    private void flushLine(StringBuilder result, StringBuilder line) {
+        if (line.length() == 0) return;
+        if (result.length() > 0) result.append("\n");
+        result.append(line);
+        line.setLength(0);
     }
 
-    private void execute() {
+    private void drawScrollbar(GuiContext ctx, int x, int y, int w, int h) {
+        int contentH = contentHeight;
+        int viewH = h;
+        if (contentH <= viewH) return;
+
+        int trackH = Math.max(20, (int) ((long) viewH * viewH / contentH));
+        int maxScroll = contentH - viewH;
+        int trackY = y + (int) ((long) scrollOffset * (viewH - trackH) / maxScroll);
+
+        ctx.fill(x, y, x + w, y + h, 0x30FFFFFF);
+        ctx.fill(x, trackY, x + w, trackY + trackH, 0xFFAAAAAA);
+    }
+
+    @Override
+    public boolean onMouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
+        int sh = this.getScreenHeight();
+        if (mouseY >= TOP_MARGIN && mouseY <= sh - BOTTOM_MARGIN) {
+            int viewH = sh - TOP_MARGIN - BOTTOM_MARGIN;
+            int maxScroll = Math.max(0, contentHeight - viewH);
+            if (maxScroll > 0) {
+                scrollOffset = (int) Math.max(0, Math.min(maxScroll, scrollOffset - vertical * SCROLL_SPEED));
+                return true;
+            }
+        }
+        return super.onMouseScrolled(mouseX, mouseY, horizontal, vertical);
+    }
+
+    @Override
+    public boolean onMouseClicked(MouseButtonEvent event, boolean isLeft) {
+        double my = event.y();
+        int sh = this.getScreenHeight();
+        if (my >= TOP_MARGIN && my <= sh - BOTTOM_MARGIN) {
+            MouseButtonEvent adjusted = new MouseButtonEvent(event.x(), my + scrollOffset, event.buttonInfo());
+            return super.onMouseClicked(adjusted, isLeft);
+        }
+        return super.onMouseClicked(event, isLeft);
+    }
+
+    @Override
+    public boolean onMouseReleased(MouseButtonEvent event) {
+        double my = event.y();
+        int sh = this.getScreenHeight();
+        if (my >= TOP_MARGIN && my <= sh - BOTTOM_MARGIN) {
+            MouseButtonEvent adjusted = new MouseButtonEvent(event.x(), my + scrollOffset, event.buttonInfo());
+            return super.onMouseReleased(adjusted);
+        }
+        return super.onMouseReleased(event);
+    }
+
+    @Override
+    public boolean onMouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        double my = event.y();
+        int sh = this.getScreenHeight();
+        if (my >= TOP_MARGIN && my <= sh - BOTTOM_MARGIN) {
+            MouseButtonEvent adjusted = new MouseButtonEvent(event.x(), my + scrollOffset, event.buttonInfo());
+            return super.onMouseDragged(adjusted, dragX, dragY);
+        }
+        return super.onMouseDragged(event, dragX, dragY);
+    }
+
+    private void execute(boolean previewOnly) {
         Minecraft mc = Minecraft.getInstance();
         List<String> values = collectValues();
+        String cmd = usage.buildCommand(values);
+        if (previewOnly) {
+            if (mc.player != null) {
+                mc.player.displayClientMessage(Component.literal("§b[WE GUI] " + cmd), false);
+            }
+            return;
+        }
         WeOperation op = WeOperationRegistry.get(usage.id());
         if (op != null) {
             op.execute(mc, usage, values);
         } else {
-            error(mc, "该功能尚未通过 API 实现: " + usage.displayTemplate());
+            error("操作未实现: " + usage.id());
         }
         mc.setScreen(null);
     }
 
-    private void reset() {
-        for (int i = 0; i < params.size(); i++) {
-            WeCommandParam param = params.get(i);
-            WidgetCheckBox cb = checkBoxes.get(i);
-            if (cb != null) {
-                cb.setChecked(false);
-            }
-
-            String defaultValue = param.defaultValue() != null ? param.defaultValue() : "";
-            WidgetDropDownList<String> dd = dropDowns.get(i);
-            if (dd != null) {
-                List<String> options = buildOptions(param, param.paramType());
-                String initial = options.contains(defaultValue) ? defaultValue : options.get(0);
-                dd.setSelectedEntry(initial);
+    private List<String> collectValues() {
+        List<String> values = new ArrayList<>();
+        for (ParamRow row : rows) {
+            WeCommandParam param = row.param;
+            if (param.optional() && (row.checkBox == null || !row.checkBox.isChecked())) {
+                values.add("");
                 continue;
             }
-
-            GuiTextFieldGeneric field = textFields.get(i);
-            if (field != null) {
-                field.setValue(defaultValue);
+            String v = "";
+            if (row.input instanceof GuiTextFieldGeneric field) {
+                v = field.getValue();
+            } else if (row.input instanceof WidgetDropDownList<?> drop) {
+                Object sel = drop.getSelectedEntry();
+                v = sel != null ? sel.toString() : "";
             }
+            values.add(v);
         }
+        return values;
     }
 
-    private void error(Minecraft mc, String message) {
+    private void error(String msg) {
+        Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
-            mc.player.displayClientMessage(Component.literal("§c[WE GUI] §f" + message), false);
+            mc.player.displayClientMessage(Component.literal("§c[WE GUI] " + msg), false);
         }
     }
 
-    @Override
-    public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
-        int key = event.key();
-        if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
-            execute();
-            return true;
-        }
-        return super.keyPressed(event);
-    }
-
-    @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTicks) {
-        super.render(g, mouseX, mouseY, partialTicks);
-
-        GuiContext ctx = GuiContext.fromGuiGraphics(g);
-        int cx = this.getScreenWidth() / 2;
-        int startY = 70;
-        int labelX = cx - LABEL_W - 12;
-
-        this.drawStringWithShadow(ctx, "§b§l" + command.displayName(), cx - this.getStringWidth(command.displayName()) / 2, 18, 0xFFFFFF);
-        this.drawString(ctx, "§8" + usage.displayTemplate(), cx - this.getStringWidth(usage.displayTemplate()) / 2, 34, 0x888888);
-        this.drawString(ctx, "§7" + usage.description(), cx - this.getStringWidth(usage.description()) / 2, 48, 0xAAAAAA);
-
-        for (int i = 0; i < params.size(); i++) {
-            WeCommandParam param = params.get(i);
-            int y = startY + i * (ROW_H + 8) + 6;
-            String label = param.name() + (param.optional() ? " §8(可选)" : "");
-            this.drawString(ctx, "§7" + label, labelX, y, 0xAAAAAA);
-
-            String desc = param.description();
-            if (desc != null && !desc.isBlank()) {
-                this.drawString(ctx, "§8" + desc, labelX, y + 10, 0x666666);
-            }
-
-            if (param.paramType() == WeParamType.FIXED) {
-                this.drawString(ctx, "§f" + param.defaultValue(), cx - 4, y, 0xFFFFFF);
-            }
-        }
-
-        int previewY = startY + params.size() * (ROW_H + 8) + 8;
-        this.drawString(ctx, "§a" + previewCommand(), cx - this.getStringWidth(previewCommand()) / 2, previewY, 0xFFFFFF);
-    }
+    private record ParamRow(WeCommandParam param, int index, int labelX, int inputX,
+                            int baseY, Object input, @Nullable WidgetCheckBox checkBox) {}
 }
