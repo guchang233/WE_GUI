@@ -1,0 +1,64 @@
+plugins {
+    id 'fabric-loom' version '1.15.4'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+repositories {
+    maven { name = 'Fabric'; url = 'https://maven.fabricmc.net/' }
+    maven { name = 'EngineHub'; url = 'https://maven.enginehub.org/repo/' }
+    maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' }
+    mavenCentral()
+}
+
+loom {
+    splitEnvironmentSourceSets()
+    enableModProvidedJavadoc = false
+
+    mods {
+        "wegui" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    implementation "com.google.code.gson:gson:2.11.0"
+
+    // WorldEdit Fabric 运行时依赖（直接调用 WE API）
+    modImplementation "com.sk89q.worldedit:worldedit-fabric-mc1.21.11:7.4.2"
+
+    // MaLiLib GUI / 配置 / 按键库
+    modImplementation "maven.modrinth:GcWjdA9I:5Ywu5uMw"
+}
+
+processResources {
+    inputs.property "version", project.version
+
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.name}" }
+    }
+}

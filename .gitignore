@@ -1,0 +1,33 @@
+.gradle/
+build/
+run/
+!run/mods/.gitkeep
+!run/config/.gitkeep
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.code-workspace
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+
+# Logs
+*.log
+
+# Local
+*.local
+.env

@@ -1,0 +1,2 @@
+22:45:52.388 I <4 · Logger> [Logger] PclLogger 日志初始化结束
+22:45:52.468 W [Application] 已有一个 PCL 实例正在运行
