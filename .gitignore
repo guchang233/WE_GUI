@@ -39,6 +39,9 @@ Thumbs.db
 # PCL launcher logs
 PCL/
 
-# Generated asset indexes
+# Generated / downloaded assets
+assets/objects/
 assets/indexes/
-1
+
+# Decompiled / external source cache
+.we-src/
