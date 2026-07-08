@@ -25,9 +25,7 @@ import java.util.List;
 public final class ParamInputScreen extends GuiBase {
     private static final int TOP_MARGIN = 55;
     private static final int BOTTOM_MARGIN = 42;
-    private static final int ROW_H = 46;
-    private static final int LABEL_W = 160;
-    private static final int INPUT_W = 240;
+    private static final int ROW_H = 52;
     private static final int SCROLL_SPEED = 18;
 
     private final WeCommand command;
@@ -53,13 +51,17 @@ public final class ParamInputScreen extends GuiBase {
 
         int sw = this.getScreenWidth();
         int sh = this.getScreenHeight();
-        int inputX = Math.min(sw - INPUT_W - 20, Math.max(LABEL_W + 30, sw / 2 - 10));
-        int labelX = inputX - LABEL_W - 12;
+
+        // 左侧说明面板固定留 34% 宽度，右侧为输入区
+        int labelPanelW = Math.max(140, sw * 34 / 100);
+        int inputX = labelPanelW + 20;
+        int inputW = Math.max(120, sw - inputX - 40);
+        int labelX = 14;
 
         int y = TOP_MARGIN;
         for (int i = 0; i < params.size(); i++) {
             WeCommandParam param = params.get(i);
-            rows.add(createRow(param, i, labelX, inputX, y));
+            rows.add(createRow(param, i, labelX, labelPanelW, inputX, inputW, y));
             y += ROW_H;
         }
         contentHeight = params.size() * ROW_H + 8;
@@ -77,22 +79,23 @@ public final class ParamInputScreen extends GuiBase {
             if (command.usages().size() > 1) {
                 GuiBase.openGui(new UsageSelectionScreen(command));
             } else {
-                GuiBase.openGui(new CommandCategoryScreen(command.category()));
+                GuiBase.openGui(new MainPanelScreen(command.category()));
             }
         });
     }
 
-    private ParamRow createRow(WeCommandParam param, int index, int labelX, int inputX, int baseY) {
+    private ParamRow createRow(WeCommandParam param, int index, int labelX, int labelPanelW,
+                               int inputX, int inputW, int baseY) {
         Object input = null;
         WidgetCheckBox checkBox = null;
 
         if (param.paramType() == WeParamType.ENUM && !param.options().isEmpty()) {
-            WidgetDropDownList<String> drop = new WidgetDropDownList<>(inputX, baseY, INPUT_W, 18, 120, 5, param.options());
+            WidgetDropDownList<String> drop = new WidgetDropDownList<>(inputX, baseY, inputW, 18, 120, 5, param.options());
             drop.setSelectedEntry(param.defaultValue() != null ? param.defaultValue() : param.options().get(0));
             this.addWidget(drop);
             input = drop;
         } else {
-            GuiTextFieldGeneric field = new GuiTextFieldGeneric(inputX, baseY, INPUT_W, 18, this.font);
+            GuiTextFieldGeneric field = new GuiTextFieldGeneric(inputX, baseY, inputW, 18, this.font);
             field.setMaxLength(256);
             String placeholder = param.defaultValue() != null ? param.defaultValue()
                     : (param.hint() != null ? param.hint() : "");
@@ -104,16 +107,13 @@ public final class ParamInputScreen extends GuiBase {
         }
 
         if (param.optional()) {
-            checkBox = new WidgetCheckBox(inputX + INPUT_W + 10, baseY + 2, 14, 14, "启用", false);
+            checkBox = new WidgetCheckBox(inputX + inputW + 10, baseY + 2, 14, 14, "启用", false);
             this.addWidget(checkBox);
         }
 
-        return new ParamRow(param, index, labelX, inputX, baseY, input, checkBox);
+        return new ParamRow(param, index, labelX, labelPanelW, inputX, inputW, baseY, input, checkBox);
     }
 
-    /**
-     * 在基类渲染控件前同步所有输入控件的 Y 坐标（跟随滚动），并用裁剪限制在内容区。
-     */
     @Override
     protected void drawWidgets(GuiContext ctx, int mouseX, int mouseY) {
         updateInputPositions();
@@ -122,9 +122,6 @@ public final class ParamInputScreen extends GuiBase {
         ctx.disableScissor();
     }
 
-    /**
-     * 在基类渲染文本框前再次同步文本框 Y 坐标，并用裁剪限制在内容区。
-     */
     @Override
     protected void drawTextFields(GuiContext ctx, int mouseX, int mouseY) {
         updateInputPositions();
@@ -159,14 +156,16 @@ public final class ParamInputScreen extends GuiBase {
         int sh = this.getScreenHeight();
         int contentBottom = sh - BOTTOM_MARGIN;
 
-        // 内容区域滚动裁剪
-        ctx.enableScissor(0, TOP_MARGIN, sw, contentBottom);
+        // 左侧说明面板背景
+        int labelPanelW = rows.isEmpty() ? 0 : rows.get(0).labelPanelW;
+        ctx.fill(0, TOP_MARGIN, labelPanelW, contentBottom, 0x20FFFFFF);
+
+        // 绘制参数说明（不使用裁剪，保证左侧说明始终可见）
         for (ParamRow row : rows) {
             int y = row.baseY - scrollOffset;
             if (y + ROW_H < TOP_MARGIN || y > contentBottom) continue;
             drawRowLabels(ctx, row, y);
         }
-        ctx.disableScissor();
 
         // 滚动条
         drawScrollbar(ctx, sw - 8, TOP_MARGIN, 6, contentBottom - TOP_MARGIN);
@@ -181,24 +180,54 @@ public final class ParamInputScreen extends GuiBase {
         WeCommandParam param = row.param;
         String reqMark = param.optional() ? "§8[可选]" : "§c*";
         String name = reqMark + " §f" + param.name();
-        String desc = param.description();
-        // 无详细说明时，使用输入提示作为回退，避免说明区域为空
-        if (desc == null || desc.isBlank()) {
-            desc = param.hint() != null ? param.hint() : "";
-        }
+        String desc = getParamDescription(param);
 
-        // 参数名
-        ctx.drawString(this.font, name, row.labelX, y + 2, 0xFFFFFF);
-        // 详细说明（换行截断）
+        // 参数名（加粗白色）
+        ctx.drawString(this.font, name, row.labelX, y + 4, 0xFFFFFF);
+
+        // 详细说明（浅灰）
         if (!desc.isEmpty()) {
-            String wrapped = wrapText(desc, LABEL_W);
-            int lineY = y + 14;
+            String wrapped = wrapText(desc, row.labelPanelW - row.labelX - 6);
+            int lineY = y + 18;
             for (String line : wrapped.split("\n")) {
                 if (lineY + 8 > y + ROW_H - 2) break;
                 ctx.drawString(this.font, "§7" + line, row.labelX, lineY, 0xAAAAAA);
                 lineY += 10;
             }
         }
+    }
+
+    private String getParamDescription(WeCommandParam param) {
+        if (param.description() != null && !param.description().isBlank()) {
+            return param.description();
+        }
+        if (param.hint() != null && !param.hint().isBlank()) {
+            return param.hint();
+        }
+        // 兜底：根据类型和默认值生成说明
+        String typeName = switch (param.paramType()) {
+            case INTEGER -> "整数";
+            case DECIMAL -> "小数";
+            case STRING -> "文本";
+            case BOOLEAN -> "是/否";
+            case PATTERN -> "方块图案";
+            case MASK -> "方块掩码";
+            case DIRECTION -> "方向";
+            case RELATIVE_DIRECTION -> "相对方向";
+            case AXIS -> "旋转轴";
+            case FILENAME -> "文件名";
+            case PLAYER -> "玩家名";
+            case ENUM -> "选项";
+            case FIXED -> "固定值";
+        };
+        StringBuilder sb = new StringBuilder("类型: " + typeName);
+        if (param.defaultValue() != null && !param.defaultValue().isEmpty()) {
+            sb.append("，默认: ").append(param.defaultValue());
+        }
+        if (param.optional()) {
+            sb.append("（可选）");
+        }
+        return sb.toString();
     }
 
     private String wrapText(String text, int maxWidth) {
@@ -342,6 +371,7 @@ public final class ParamInputScreen extends GuiBase {
         }
     }
 
-    private record ParamRow(WeCommandParam param, int index, int labelX, int inputX,
-                            int baseY, Object input, @Nullable WidgetCheckBox checkBox) {}
+    private record ParamRow(WeCommandParam param, int index, int labelX, int labelPanelW,
+                            int inputX, int inputW, int baseY, Object input,
+                            @Nullable WidgetCheckBox checkBox) {}
 }

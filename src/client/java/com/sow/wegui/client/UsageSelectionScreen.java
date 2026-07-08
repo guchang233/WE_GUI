@@ -58,7 +58,7 @@ public final class UsageSelectionScreen extends GuiListBase<WeCommandUsage, Widg
         ButtonGeneric back = new ButtonNoScroll(cy - 80, y, 75, 18, "返回");
         ButtonGeneric close = new ButtonNoScroll(cy + 5, y, 75, 18, "关闭");
 
-        this.addButton(back, (btn, mb) -> GuiBase.openGui(new CommandCategoryScreen(command.category())));
+        this.addButton(back, (btn, mb) -> GuiBase.openGui(new MainPanelScreen(command.category())));
         this.addButton(close, (btn, mb) -> Minecraft.getInstance().setScreen(null));
     }
 
