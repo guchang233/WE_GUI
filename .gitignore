@@ -31,3 +31,13 @@ Thumbs.db
 # Local
 *.local
 .env
+
+# Project local tooling
+.jdk/
+.tmp-malilib/
+
+# PCL launcher logs
+PCL/
+
+# Generated asset indexes
+assets/indexes/
