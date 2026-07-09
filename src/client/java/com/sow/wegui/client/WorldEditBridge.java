@@ -9,6 +9,7 @@ import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldedit.world.block.BaseBlock;
+import com.sk89q.worldedit.extent.transform.BlockTransformExtent;
 import com.sow.wegui.WeGuiMod;
 import com.sow.wegui.WeStatus;
 import net.minecraft.client.Minecraft;
@@ -142,15 +143,17 @@ public final class WorldEditBridge {
                         BlockVector3 pos = BlockVector3.at(x, y, z);
                         BaseBlock base = clipboard.getFullBlock(pos);
                         if (base.getBlockType().id().equals("minecraft:air")) continue;
-                        BlockState state = convertToMcState(base.toImmutableState());
+
+                        // 应用 //flip、//rotate 等变换到方块状态（朝向、半砖上下等）
+                        // 使用 WorldEdit 内部 paste 时相同的 BlockTransformExtent，确保与 //paste 结果一致
+                        BaseBlock transformedBase = BlockTransformExtent.transform(base, transform);
+                        BlockState state = convertToMcState(transformedBase.toImmutableState());
                         if (state == null || state.isAir()) continue;
 
-                        // 应用 //flip、//rotate 等变换到位置
-                        BlockVector3 transformed = transform.apply(pos.toVector3()).toBlockPoint();
-                        BlockPos target = new BlockPos(
-                                transformed.x() - origin.x(),
-                                transformed.y() - origin.y(),
-                                transformed.z() - origin.z());
+                        // 应用变换到位置（绕剪贴板 origin）
+                        BlockVector3 local = pos.subtract(origin);
+                        BlockVector3 transformed = transform.apply(local.toVector3()).toBlockPoint();
+                        BlockPos target = new BlockPos(transformed.x(), transformed.y(), transformed.z());
                         result.put(target, state);
                     }
                 }

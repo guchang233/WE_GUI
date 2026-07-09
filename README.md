@@ -45,9 +45,9 @@ cd wegui
 # 构建产物位于 build/libs/
 ```
 
-## 从 GitHub Actions 下载
+## 从 release 下载
 
-每次推送 tag（如 `v0.1`）时，GitHub Actions 会自动构建并发布 JAR 文件到 Release 页面。
+每次推送时会自动构建并发布JAR文件到[Release](https://github.com/guchang233/WE_GUI/releases) 页面。
 
 ## 许可
 
