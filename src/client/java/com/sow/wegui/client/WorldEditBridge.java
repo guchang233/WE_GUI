@@ -5,6 +5,7 @@ import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.extension.platform.Capability;
 import com.sk89q.worldedit.math.BlockVector3;
+import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldedit.world.block.BaseBlock;
@@ -132,6 +133,8 @@ public final class WorldEditBridge {
             BlockVector3 min = clipboard.getMinimumPoint();
             BlockVector3 max = clipboard.getMaximumPoint();
             BlockVector3 origin = clipboard.getOrigin();
+            Transform transform = holder.getTransform();
+
             Map<BlockPos, BlockState> result = new HashMap<>();
             for (int x = min.x(); x <= max.x(); x++) {
                 for (int y = min.y(); y <= max.y(); y++) {
@@ -141,8 +144,13 @@ public final class WorldEditBridge {
                         if (base.getBlockType().id().equals("minecraft:air")) continue;
                         BlockState state = convertToMcState(base.toImmutableState());
                         if (state == null || state.isAir()) continue;
+
+                        // 应用 //flip、//rotate 等变换到位置
+                        BlockVector3 transformed = transform.apply(pos.toVector3()).toBlockPoint();
                         BlockPos target = new BlockPos(
-                                x - origin.x(), y - origin.y(), z - origin.z());
+                                transformed.x() - origin.x(),
+                                transformed.y() - origin.y(),
+                                transformed.z() - origin.z());
                         result.put(target, state);
                     }
                 }

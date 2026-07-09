@@ -1,7 +1,7 @@
 package com.sow.wegui.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import com.sow.wegui.client.screen.MainPanelScreen;
+import com.sow.wegui.client.screen.SettingsScreen;
 import com.sow.wegui.config.Config;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -39,7 +39,7 @@ public class WeGuiClient implements ClientModInitializer {
     private static void openMainPanel() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.screen != null) return;
-        mc.setScreen(new MainPanelScreen());
+        mc.setScreen(new SettingsScreen(null));
     }
 
     /**
@@ -48,7 +48,7 @@ public class WeGuiClient implements ClientModInitializer {
     public static void updateKeyOpenPanel(int keyCode) {
         Config.get().setKeyOpenPanel(keyCode);
         if (openPanelKey != null) {
-            openPanelKey.setKey(InputConstants.Type.KEYSYM.createOrThrow(keyCode));
+            openPanelKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(keyCode));
         }
     }
 }

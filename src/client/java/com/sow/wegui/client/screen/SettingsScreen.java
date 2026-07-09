@@ -1,7 +1,9 @@
 package com.sow.wegui.client.screen;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.sow.wegui.client.CommandSender;
 import com.sow.wegui.client.WeGuiClient;
+import com.sow.wegui.commands.WeCommands;
 import com.sow.wegui.config.Config;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -9,6 +11,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Checkbox;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
@@ -29,10 +32,22 @@ public class SettingsScreen extends BaseScreen {
     private final Screen parent;
     private Tab currentTab = Tab.CONFIG;
     private ConfigCategory currentCategory = ConfigCategory.GENERAL;
+    private WeCommands.Category selectedFunctionCategory = WeCommands.Category.GENERAL;
 
+    private static final int CMD_BUTTON_W = 120;
+    private static final int CMD_BUTTON_H = 18;
+    private static final int CMD_GAP = 4;
+
+    private ScrollPanel categoryPanel;
     private ScrollPanel contentPanel;
     private final List<Button> categoryButtons = new ArrayList<>();
     private KeyButton openPanelKeyButton;
+
+    // 单次 GUI 会话内的滚动位置缓存
+    private int configCategoryScrollY = 0;
+    private int configContentScrollY = 0;
+    private int functionCategoryScrollY = 0;
+    private int functionContentScrollY = 0;
 
     // 配置组件引用
     private Checkbox statusBarCheck;
@@ -45,8 +60,18 @@ public class SettingsScreen extends BaseScreen {
     private EditBox line2Box;
 
     public SettingsScreen(Screen parent) {
-        super(Component.literal("WorldEdit GUI 设置"));
+        super(Component.literal("WorldEdit GUI"));
         this.parent = parent;
+        Config cfg = Config.get();
+        try {
+            this.currentTab = Tab.valueOf(cfg.getLastSettingsTab());
+        } catch (IllegalArgumentException ignored) {}
+        try {
+            this.currentCategory = ConfigCategory.valueOf(cfg.getLastConfigCategory());
+        } catch (IllegalArgumentException ignored) {}
+        try {
+            this.selectedFunctionCategory = WeCommands.Category.valueOf(cfg.getLastFunctionCategory());
+        } catch (IllegalArgumentException ignored) {}
     }
 
     @Override
@@ -56,8 +81,18 @@ public class SettingsScreen extends BaseScreen {
     }
 
     private void rebuild() {
+        // 保存当前滚动位置
+        if (currentTab == Tab.CONFIG) {
+            if (categoryPanel != null) configCategoryScrollY = (int) categoryPanel.getScrollY();
+            if (contentPanel != null) configContentScrollY = (int) contentPanel.getScrollY();
+        } else {
+            if (categoryPanel != null) functionCategoryScrollY = (int) categoryPanel.getScrollY();
+            if (contentPanel != null) functionContentScrollY = (int) contentPanel.getScrollY();
+        }
+
         clearWidgets();
         categoryButtons.clear();
+        categoryPanel = null;
         contentPanel = null;
         openPanelKeyButton = null;
         statusBarCheck = null;
@@ -73,14 +108,23 @@ public class SettingsScreen extends BaseScreen {
 
         if (currentTab == Tab.CONFIG) {
             buildConfigLayout();
+            if (categoryPanel != null) categoryPanel.setScrollY(configCategoryScrollY);
+            if (contentPanel != null) contentPanel.setScrollY(configContentScrollY);
         } else {
             buildFeatureLayout();
+            if (categoryPanel != null) categoryPanel.setScrollY(functionCategoryScrollY);
+            if (contentPanel != null) contentPanel.setScrollY(functionContentScrollY);
         }
 
-        addRenderableWidget(Button.builder(Component.literal("保存"), b -> save())
-                .bounds(width / 2 - 75 - 5, height - 28, 70, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("返回"), b -> onClose())
-                .bounds(width / 2 + 5, height - 28, 70, 20).build());
+        if (currentTab == Tab.CONFIG) {
+            addRenderableWidget(Button.builder(Component.literal("保存"), b -> save())
+                    .bounds(width / 2 - 75 - 5, height - 28, 70, 20).build());
+            addRenderableWidget(Button.builder(Component.literal("返回"), b -> onClose())
+                    .bounds(width / 2 + 5, height - 28, 70, 20).build());
+        } else {
+            addRenderableWidget(Button.builder(Component.literal("返回"), b -> onClose())
+                    .bounds(width / 2 - 35, height - 28, 70, 20).build());
+        }
     }
 
     private void buildTabs() {
@@ -110,22 +154,31 @@ public class SettingsScreen extends BaseScreen {
         int bottom = 38;
         int gap = 4;
 
-        int contentX = margin + leftW + margin;
+        int catX = margin;
+        int catY = top;
+        int catW = leftW;
+        int catH = Math.max(60, height - top - bottom);
+
+        int contentX = catX + catW + margin;
         int contentY = top;
         int contentW = Math.max(120, width - contentX - margin);
         int contentH = Math.max(60, height - top - bottom);
 
+        categoryPanel = new ScrollPanel(catX, catY, catW, catH, Component.empty());
+        addRenderableWidget(categoryPanel);
+
         ConfigCategory[] categories = ConfigCategory.values();
-        int catH = 22;
+        int catBtnH = 22;
         for (int i = 0; i < categories.length; i++) {
             final ConfigCategory cat = categories[i];
             Button btn = Button.builder(Component.literal(cat.displayName), b -> selectCategory(cat))
-                    .bounds(margin, contentY + i * (catH + gap), leftW, catH)
+                    .bounds(0, 0, catW, catBtnH)
                     .build();
             btn.active = currentCategory != cat;
-            addRenderableWidget(btn);
+            categoryPanel.addWidget(btn, 0, i * (catBtnH + gap));
             categoryButtons.add(btn);
         }
+        categoryPanel.refreshContentHeight();
 
         contentPanel = new ScrollPanel(contentX, contentY, contentW, contentH, Component.empty());
         addRenderableWidget(contentPanel);
@@ -140,21 +193,87 @@ public class SettingsScreen extends BaseScreen {
 
     private void selectCategory(ConfigCategory cat) {
         this.currentCategory = cat;
+        this.configContentScrollY = 0;
         rebuild();
     }
 
+    private void selectFunctionCategory(WeCommands.Category cat) {
+        this.selectedFunctionCategory = cat;
+        this.functionContentScrollY = 0;
+        rebuild();
+    }
+
+    private void buildCommandButtons() {
+        List<WeCommands.Command> commands = WeCommands.byCategory(selectedFunctionCategory);
+        int cols = Math.max(1, contentPanel.getWidth() / (CMD_BUTTON_W + CMD_GAP));
+        int y = 0;
+        for (int i = 0; i < commands.size(); i++) {
+            int col = i % cols;
+            int row = i / cols;
+            int x = col * (CMD_BUTTON_W + CMD_GAP);
+            int yPos = y + row * (CMD_BUTTON_H + CMD_GAP);
+            WeCommands.Command cmd = commands.get(i);
+            Button btn = Button.builder(Component.literal(cmd.displayName()), b -> onCommand(cmd))
+                    .bounds(0, 0, CMD_BUTTON_W, CMD_BUTTON_H)
+                    .build();
+            btn.setTooltip(Tooltip.create(Component.literal(cmd.description())));
+            contentPanel.addWidget(btn, x, yPos);
+        }
+        contentPanel.refreshContentHeight();
+    }
+
+    private void onCommand(WeCommands.Command cmd) {
+        if (cmd.usages().size() == 1) {
+            WeCommands.Usage usage = cmd.usages().get(0);
+            if (usage.params().isEmpty()) {
+                CommandSender.send(usage.buildCommand(List.of()));
+                onClose();
+            } else {
+                minecraft.setScreen(new ParamInputScreen(this, cmd, usage));
+            }
+        } else {
+            minecraft.setScreen(new UsageSelectScreen(this, cmd));
+        }
+    }
+
     private void buildFeatureLayout() {
-        // 功能标签：预留，后续可扩展
         int margin = 10;
+        int leftW = 100;
         int top = 35;
         int bottom = 38;
-        int panelW = width - margin * 2;
-        int panelH = Math.max(60, height - top - bottom);
-        contentPanel = new ScrollPanel(margin, top, panelW, panelH, Component.empty());
+        int gap = 4;
+
+        int catX = margin;
+        int catY = top;
+        int catW = leftW;
+        int catH = Math.max(60, height - top - bottom);
+
+        int contentX = catX + catW + margin;
+        int contentY = top;
+        int contentW = Math.max(120, width - contentX - margin);
+        int contentH = Math.max(60, height - top - bottom);
+
+        categoryPanel = new ScrollPanel(catX, catY, catW, catH, Component.empty());
+        addRenderableWidget(categoryPanel);
+
+        // 左侧命令分类
+        WeCommands.Category[] categories = WeCommands.Category.values();
+        int catBtnH = 22;
+        for (int i = 0; i < categories.length; i++) {
+            final WeCommands.Category cat = categories[i];
+            Button btn = Button.builder(Component.literal(cat.getDisplayName()), b -> selectFunctionCategory(cat))
+                    .bounds(0, 0, catW, catBtnH)
+                    .build();
+            btn.active = selectedFunctionCategory != cat;
+            categoryPanel.addWidget(btn, 0, i * (catBtnH + gap));
+            categoryButtons.add(btn);
+        }
+        categoryPanel.refreshContentHeight();
+
+        // 右侧命令按钮网格（可滚动）
+        contentPanel = new ScrollPanel(contentX, contentY, contentW, contentH, Component.empty());
         addRenderableWidget(contentPanel);
-        contentPanel.addLabel("功能设置", 0, 0);
-        contentPanel.addLabel("此标签页用于放置 WorldEdit GUI 的扩展功能，", 0, 20);
-        contentPanel.addLabel("例如轮盘预设管理等。当前版本暂未实现。", 0, 34);
+        buildCommandButtons();
     }
 
     private void buildGeneralPanel() {
@@ -285,7 +404,20 @@ public class SettingsScreen extends BaseScreen {
 
     @Override
     public void onClose() {
+        Config cfg = Config.get();
+        cfg.setLastSettingsTab(currentTab.name());
+        cfg.setLastConfigCategory(currentCategory.name());
+        cfg.setLastFunctionCategory(selectedFunctionCategory.name());
+        Config.save();
         minecraft.setScreen(parent);
+    }
+
+    private void returnToParent() {
+        if (parent != null) {
+            minecraft.setScreen(parent);
+        } else {
+            minecraft.setScreen(null);
+        }
     }
 
     private enum Tab {
@@ -308,7 +440,7 @@ public class SettingsScreen extends BaseScreen {
     /**
      * 可滚动面板，支持放置任意 AbstractWidget 子组件。
      */
-    private static final class ScrollPanel extends AbstractWidget {
+    private final class ScrollPanel extends AbstractWidget {
         private static final int SCROLLBAR_WIDTH = 6;
         private final List<WidgetEntry> children = new ArrayList<>();
         private double scrollY;
@@ -359,7 +491,11 @@ public class SettingsScreen extends BaseScreen {
             return Math.max(0, contentHeight - height);
         }
 
-        private void setScrollY(double value) {
+        double getScrollY() {
+            return scrollY;
+        }
+
+        void setScrollY(double value) {
             this.scrollY = Mth.clamp(value, 0, getMaxScrollY());
             for (WidgetEntry entry : children) {
                 entry.widget.setY(getY() + entry.relY - (int) scrollY);
@@ -508,7 +644,7 @@ public class SettingsScreen extends BaseScreen {
         private final Consumer<Integer> onChange;
 
         KeyButton(int x, int y, int width, int height, int keyCode, Consumer<Integer> onChange) {
-            super(x, y, width, height, Component.literal(InputConstants.getKey(keyCode, -1).getDisplayName().getString()));
+            super(x, y, width, height, Component.literal(InputConstants.Type.KEYSYM.getOrCreate(keyCode).getDisplayName().getString()));
             this.keyCode = keyCode;
             this.onChange = onChange;
         }
@@ -524,8 +660,8 @@ public class SettingsScreen extends BaseScreen {
         }
 
         @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            if (isMouseOver(mouseX, mouseY)) {
+        public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+            if (isMouseOver(event.x(), event.y())) {
                 waiting = true;
                 return true;
             }
@@ -542,7 +678,7 @@ public class SettingsScreen extends BaseScreen {
 
         void setKeyCode(int keyCode) {
             this.keyCode = keyCode;
-            setMessage(Component.literal(InputConstants.getKey(keyCode, -1).getDisplayName().getString()));
+            setMessage(Component.literal(InputConstants.Type.KEYSYM.getOrCreate(keyCode).getDisplayName().getString()));
             onChange.accept(keyCode);
         }
 

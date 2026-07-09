@@ -34,7 +34,6 @@ public final class PastePreviewRenderer {
 
     @Nullable
     private static Map<BlockPos, BlockState> cachedBlocks;
-    private static WorldEditBridge.ClipboardBounds cachedBounds;
     private static long cacheTick = -CLIPBOARD_CACHE_TICKS;
 
     public static void register() {
@@ -47,7 +46,6 @@ public final class PastePreviewRenderer {
      */
     public static void invalidateCache() {
         cachedBlocks = null;
-        cachedBounds = null;
         cacheTick = -CLIPBOARD_CACHE_TICKS;
     }
 
@@ -75,35 +73,47 @@ public final class PastePreviewRenderer {
             }
 
         // 2) copy 后的粘贴预览（绿色线框 + 半透明材质），原点在玩家所在方块
-        WorldEditBridge.ClipboardBounds cb = WorldEditBridge.getClipboardBounds(mc);
-        if (cb != null) {
+        Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc);
+        if (blocks != null && !blocks.isEmpty()) {
             BlockPos playerPos = BlockPos.containing(mc.player.getX(), mc.player.getY(), mc.player.getZ());
-            double minX = cb.minX() - cb.originX() + playerPos.getX();
-            double minY = cb.minY() - cb.originY() + playerPos.getY();
-            double minZ = cb.minZ() - cb.originZ() + playerPos.getZ();
-            AABB pasteBox = new AABB(minX, minY, minZ, minX + cb.w(), minY + cb.h(), minZ + cb.l());
+            AABB pasteBox = computePasteBounds(blocks, playerPos);
             drawBox(buffer, matrix, pasteBox, 0.3f, 1.0f, 0.5f, 0.8f);
 
             // 3) 真实材质半透明预览
-            Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc, cb);
-            if (blocks != null && !blocks.isEmpty()) {
-                renderGhostBlocks(mc, pose, context.consumers(), blocks, playerPos);
-            }
+            renderGhostBlocks(mc, pose, context.consumers(), blocks, playerPos);
         }
 
         pose.popPose();
     }
 
     @Nullable
-    private static Map<BlockPos, BlockState> getClipboardBlocksCached(Minecraft mc, WorldEditBridge.ClipboardBounds cb) {
+    private static Map<BlockPos, BlockState> getClipboardBlocksCached(Minecraft mc) {
         long tick = mc.level.getGameTime();
-        if (cachedBlocks != null && cb.equals(cachedBounds) && tick - cacheTick < CLIPBOARD_CACHE_TICKS) {
+        if (cachedBlocks != null && tick - cacheTick < CLIPBOARD_CACHE_TICKS) {
             return cachedBlocks;
         }
-        cachedBounds = cb;
         cacheTick = tick;
         cachedBlocks = WorldEditBridge.getClipboardBlocks(mc);
         return cachedBlocks;
+    }
+
+    private static AABB computePasteBounds(Map<BlockPos, BlockState> blocks, BlockPos origin) {
+        int minX = Integer.MAX_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        for (BlockPos rel : blocks.keySet()) {
+            BlockPos pos = origin.offset(rel);
+            minX = Math.min(minX, pos.getX());
+            minY = Math.min(minY, pos.getY());
+            minZ = Math.min(minZ, pos.getZ());
+            maxX = Math.max(maxX, pos.getX() + 1);
+            maxY = Math.max(maxY, pos.getY() + 1);
+            maxZ = Math.max(maxZ, pos.getZ() + 1);
+        }
+        return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     private static void renderGhostBlocks(Minecraft mc, PoseStack pose, MultiBufferSource bufferSource,

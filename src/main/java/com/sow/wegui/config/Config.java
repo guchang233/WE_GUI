@@ -34,6 +34,9 @@ public class Config {
     private int statusBarOffsetY = 4;
     private String statusBarLine1 = "{size} §8| §7{count}";
     private String statusBarLine2 = "§7剪贴板: {clipboard}";
+    private String lastSettingsTab = "CONFIG";
+    private String lastConfigCategory = "GENERAL";
+    private String lastFunctionCategory = "GENERAL";
     private final List<WheelProfile> wheels = new ArrayList<>();
 
     private static Config INSTANCE;
@@ -148,5 +151,29 @@ public class Config {
 
     public List<WheelProfile> getWheels() {
         return wheels;
+    }
+
+    public String getLastSettingsTab() {
+        return lastSettingsTab;
+    }
+
+    public void setLastSettingsTab(String lastSettingsTab) {
+        this.lastSettingsTab = lastSettingsTab;
+    }
+
+    public String getLastConfigCategory() {
+        return lastConfigCategory;
+    }
+
+    public void setLastConfigCategory(String lastConfigCategory) {
+        this.lastConfigCategory = lastConfigCategory;
+    }
+
+    public String getLastFunctionCategory() {
+        return lastFunctionCategory;
+    }
+
+    public void setLastFunctionCategory(String lastFunctionCategory) {
+        this.lastFunctionCategory = lastFunctionCategory;
     }
 }
