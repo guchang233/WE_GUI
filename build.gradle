@@ -35,8 +35,6 @@ dependencies {
     // WorldEdit Fabric 运行时依赖（直接调用 WE API）
     modImplementation "com.sk89q.worldedit:worldedit-fabric-mc1.21.11:7.4.2"
 
-    // MaLiLib GUI / 配置 / 按键库
-    modImplementation "maven.modrinth:GcWjdA9I:5Ywu5uMw"
 }
 
 processResources {

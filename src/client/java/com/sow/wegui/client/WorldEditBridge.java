@@ -1,143 +1,173 @@
 package com.sow.wegui.client;
 
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.sk89q.worldedit.LocalSession;
+import com.sk89q.worldedit.WorldEdit;
+import com.sk89q.worldedit.extension.platform.Capability;
+import com.sk89q.worldedit.math.BlockVector3;
+import com.sk89q.worldedit.regions.Region;
+import com.sk89q.worldedit.session.ClipboardHolder;
+import com.sk89q.worldedit.world.block.BaseBlock;
 import com.sow.wegui.WeGuiMod;
-import com.sow.wegui.WeStatusSnapshot;
-import net.fabricmc.loader.api.FabricLoader;
+import com.sow.wegui.WeStatus;
 import net.minecraft.client.Minecraft;
-import net.minecraft.world.entity.player.Player;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.commands.arguments.blocks.BlockStateParser;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 
-import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * WorldEdit 反射桥接。
- *
- * 通过反射读取 WE 的 LocalSession / Region / Clipboard，构造 WeStatusSnapshot。
- * 首次成功后缓存反射方法；失败时返回无 WE 或无选区状态，不会抛异常。
+ * 读取 WorldEdit 状态与剪贴板边界，用于状态栏和粘贴预览。
  */
 public final class WorldEditBridge {
-    private static final String MOD_ID = "worldedit";
-    private static volatile Boolean loaded;
-
-    private static boolean reflectionReady = false;
-    private static Method adaptPlayerMethod;
-    private static Method getInstanceMethod;
-    private static Method getSessionManagerMethod;
-    private static Method sessionGetMethod;
-    private static Method getSelectionWorldMethod;
-    private static Method getSelectionMethod;
-    private static Method getClipboardMethod;
-    private static Method getWidthMethod;
-    private static Method getHeightMethod;
-    private static Method getLengthMethod;
-    private static Method getVolumeMethod;
-    private static Method getMinimumPointMethod;
-    private static Method getMaximumPointMethod;
-
     private WorldEditBridge() {}
 
-    public static boolean isLoaded() {
-        if (loaded == null) loaded = FabricLoader.getInstance().isModLoaded(MOD_ID);
-        return loaded;
-    }
+    public static WeStatus capture(Minecraft mc) {
+        if (mc.player == null) return WeStatus.noWorldEdit();
+        if (!WorldEditAdapter.isLoaded()) return WeStatus.noWorldEdit();
 
-    public static WeStatusSnapshot capture(Minecraft mc) {
-        if (!isLoaded() || mc.player == null) return WeStatusSnapshot.noWorldEdit();
         try {
-            return captureViaReflection(mc.player);
+            return captureInternal(mc.player);
         } catch (Throwable e) {
-            WeGuiMod.LOGGER.debug("[WE GUI] 读取 WE 状态失败: {}", e.toString());
-            return WeStatusSnapshot.noWorldEdit();
+            WeGuiMod.LOGGER.debug("读取 WorldEdit 状态失败: {}", e.toString());
+            return WeStatus.noSelection(versionOrEmpty(), false, 0, 0, 0);
         }
     }
 
-    private static void ensureReflection() throws ReflectiveOperationException {
-        if (reflectionReady) return;
+    private static WeStatus captureInternal(LocalPlayer player) {
+        LocalSession session = WorldEditAdapter.session(player);
+        String version = versionOrEmpty();
+        ClipboardBounds cb = getClipboardBounds(session);
 
-        Class<?> fa = Class.forName("com.sk89q.worldedit.fabric.FabricAdapter");
-        adaptPlayerMethod = fa.getMethod("adaptPlayer", Player.class);
+        Region region = WorldEditAdapter.selection(player);
 
-        Class<?> we = Class.forName("com.sk89q.worldedit.WorldEdit");
-        getInstanceMethod = we.getMethod("getInstance");
-        getSessionManagerMethod = we.getMethod("getSessionManager");
+        if (region == null) {
+            return WeStatus.noSelection(version, cb != null,
+                    cb == null ? 0 : cb.w, cb == null ? 0 : cb.h, cb == null ? 0 : cb.l);
+        }
 
-        Class<?> actor = Class.forName("com.sk89q.worldedit.extension.platform.Actor");
-        sessionGetMethod = getSessionManagerMethod.getReturnType().getMethod("get", actor);
+        BlockVector3 min = region.getMinimumPoint();
+        BlockVector3 max = region.getMaximumPoint();
+        int w = max.x() - min.x() + 1;
+        int h = max.y() - min.y() + 1;
+        int l = max.z() - min.z() + 1;
+        long count = region.getVolume();
 
-        Class<?> session = sessionGetMethod.getReturnType();
-        getSelectionWorldMethod = session.getMethod("getSelectionWorld");
-        getSelectionMethod = session.getMethod("getSelection", Class.forName("com.sk89q.worldedit.world.World"));
-        getClipboardMethod = session.getMethod("getClipboard");
-
-        Class<?> region = Class.forName("com.sk89q.worldedit.regions.Region");
-        getWidthMethod = region.getMethod("getWidth");
-        getHeightMethod = region.getMethod("getHeight");
-        getLengthMethod = region.getMethod("getLength");
-        getVolumeMethod = region.getMethod("getVolume");
-        getMinimumPointMethod = region.getMethod("getMinimumPoint");
-        getMaximumPointMethod = region.getMethod("getMaximumPoint");
-
-        reflectionReady = true;
+        return WeStatus.ready(version, region.getClass().getSimpleName(), w, h, l, count,
+                cb != null, cb == null ? 0 : cb.w, cb == null ? 0 : cb.h, cb == null ? 0 : cb.l);
     }
 
-    private static WeStatusSnapshot captureViaReflection(Player player) throws ReflectiveOperationException {
-        ensureReflection();
-
-        Object wePlayer = adaptPlayerMethod.invoke(null, player);
-        Object we = getInstanceMethod.invoke(null);
-        Object sm = getSessionManagerMethod.invoke(we);
-        Object session = sessionGetMethod.invoke(sm, wePlayer);
-
-        String version = readVersion(we);
-        boolean clipboard = hasClipboard(session);
-
-        Object selWorld = getSelectionWorldMethod.invoke(session);
-        if (selWorld == null) return WeStatusSnapshot.noSelection(clipboard, version);
-
-        Object region = getSelectionMethod.invoke(session, selWorld);
-        if (region == null) return WeStatusSnapshot.noSelection(clipboard, version);
-
-        int w = ((Number) getWidthMethod.invoke(region)).intValue();
-        int h = ((Number) getHeightMethod.invoke(region)).intValue();
-        int l = ((Number) getLengthMethod.invoke(region)).intValue();
-        long vol = ((Number) getVolumeMethod.invoke(region)).longValue();
-
-        String min = formatVector(getMinimumPointMethod.invoke(region));
-        String max = formatVector(getMaximumPointMethod.invoke(region));
-
-        return WeStatusSnapshot.ready(w, h, l, vol, clipboard, version, min, max);
+    @Nullable
+    public static ClipboardBounds getClipboardBounds(Minecraft mc) {
+        if (mc.player == null) return null;
+        return getClipboardBounds(WorldEditAdapter.session(mc.player));
     }
 
-    private static String readVersion(Object we) {
+    @Nullable
+    private static ClipboardBounds getClipboardBounds(@Nullable LocalSession session) {
+        if (session == null) return null;
         try {
-            Object pm = we.getClass().getMethod("getPlatformManager").invoke(we);
-            Object p = pm.getClass().getMethod("getPlatform").invoke(pm);
-            Object v = p.getClass().getMethod("getVersion").invoke(p);
-            return v != null ? v.toString() : "";
+            ClipboardHolder holder = session.getClipboard();
+            if (holder == null) return null;
+            com.sk89q.worldedit.extent.clipboard.Clipboard clipboard = holder.getClipboard();
+            BlockVector3 min = clipboard.getMinimumPoint();
+            BlockVector3 max = clipboard.getMaximumPoint();
+            BlockVector3 origin = clipboard.getOrigin();
+            return new ClipboardBounds(
+                    min.x(), min.y(), min.z(),
+                    max.x() - min.x() + 1, max.y() - min.y() + 1, max.z() - min.z() + 1,
+                    origin.x(), origin.y(), origin.z());
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    private static String versionOrEmpty() {
+        try {
+            return WorldEdit.getInstance().getPlatformManager()
+                    .queryCapability(Capability.USER_COMMANDS).getPlatformVersion();
         } catch (Throwable e) {
             return "";
         }
     }
 
-    private static boolean hasClipboard(Object session) {
+    @Nullable
+    public static Bounds getSelectionBounds(Minecraft mc) {
+        if (mc.player == null) return null;
+        return getSelectionBounds(WorldEditAdapter.selection(mc.player));
+    }
+
+    @Nullable
+    private static Bounds getSelectionBounds(@Nullable Region region) {
+        if (region == null) return null;
         try {
-            Object cb = getClipboardMethod.invoke(session);
-            return cb != null;
+            BlockVector3 min = region.getMinimumPoint();
+            BlockVector3 max = region.getMaximumPoint();
+            return new Bounds(
+                    min.x(), min.y(), min.z(),
+                    max.x() - min.x() + 1, max.y() - min.y() + 1, max.z() - min.z() + 1);
         } catch (Throwable e) {
-            return false;
+            return null;
         }
     }
 
-    private static String formatVector(Object weVec) {
+    /**
+     * 获取当前 WorldEdit 剪贴板中的方块（已转换为 Minecraft BlockState）。
+     * 返回的 Map 键为剪贴板内绝对坐标对应的目标世界坐标。
+     */
+    @Nullable
+    public static Map<BlockPos, BlockState> getClipboardBlocks(Minecraft mc) {
+        if (mc.player == null) return null;
+        LocalSession session = WorldEditAdapter.session(mc.player);
+        if (session == null) return null;
         try {
-            Method getX = weVec.getClass().getMethod("getX");
-            Method getY = weVec.getClass().getMethod("getY");
-            Method getZ = weVec.getClass().getMethod("getZ");
-            int x = ((Number) getX.invoke(weVec)).intValue();
-            int y = ((Number) getY.invoke(weVec)).intValue();
-            int z = ((Number) getZ.invoke(weVec)).intValue();
-            return x + "," + y + "," + z;
+            ClipboardHolder holder = session.getClipboard();
+            if (holder == null) return null;
+            com.sk89q.worldedit.extent.clipboard.Clipboard clipboard = holder.getClipboard();
+            BlockVector3 min = clipboard.getMinimumPoint();
+            BlockVector3 max = clipboard.getMaximumPoint();
+            BlockVector3 origin = clipboard.getOrigin();
+            Map<BlockPos, BlockState> result = new HashMap<>();
+            for (int x = min.x(); x <= max.x(); x++) {
+                for (int y = min.y(); y <= max.y(); y++) {
+                    for (int z = min.z(); z <= max.z(); z++) {
+                        BlockVector3 pos = BlockVector3.at(x, y, z);
+                        BaseBlock base = clipboard.getFullBlock(pos);
+                        if (base.getBlockType().id().equals("minecraft:air")) continue;
+                        BlockState state = convertToMcState(base.toImmutableState());
+                        if (state == null || state.isAir()) continue;
+                        BlockPos target = new BlockPos(
+                                x - origin.x(), y - origin.y(), z - origin.z());
+                        result.put(target, state);
+                    }
+                }
+            }
+            return result;
         } catch (Throwable e) {
-            return "-";
+            WeGuiMod.LOGGER.debug("读取 WorldEdit 剪贴板方块失败: {}", e.toString());
+            return null;
         }
+    }
+
+    @Nullable
+    private static BlockState convertToMcState(com.sk89q.worldedit.world.block.BlockState weState) {
+        try {
+            String str = weState.getAsString();
+            return BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, str, true).blockState();
+        } catch (CommandSyntaxException e) {
+            WeGuiMod.LOGGER.debug("无法解析方块状态: {}", weState.getAsString());
+            return null;
+        }
+    }
+
+    public record ClipboardBounds(int minX, int minY, int minZ, int w, int h, int l, int originX, int originY, int originZ) {
+    }
+
+    public record Bounds(int minX, int minY, int minZ, int w, int h, int l) {
     }
 }

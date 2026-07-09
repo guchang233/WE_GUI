@@ -1,44 +1,54 @@
 package com.sow.wegui.client;
 
-import com.sow.wegui.ModConfig;
-import com.sow.wegui.WeGuiMod;
-import com.sow.wegui.config.WeGuiConfigs;
+import com.mojang.blaze3d.platform.InputConstants;
+import com.sow.wegui.client.screen.MainPanelScreen;
+import com.sow.wegui.config.Config;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.Identifier;
 
 /**
- * 客户端入口。
- *
- * 已摈弃轮盘 HUD，全面使用列表式命令面板（MainPanelScreen）。
- * 按键与配置迁移到 MaLiLib 管理。
+ * 客户端入口：注册按键、HUD、粘贴预览。
  */
-public final class WeGuiClient implements ClientModInitializer {
+public class WeGuiClient implements ClientModInitializer {
+    public static final String KEY_OPEN_PANEL = "key.wegui.open_panel";
+    private static KeyMapping openPanelKey;
+
     @Override
     public void onInitializeClient() {
-        ModConfig.load();
-        WeGuiConfigs.init();
-        WeGuiInputHandler.register();
+        Config.load();
+        openPanelKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                KEY_OPEN_PANEL,
+                InputConstants.Type.KEYSYM,
+                Config.get().getKeyOpenPanel(),
+                KeyMapping.Category.MISC
+        ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            StatusBar.tick(client);
+            if (openPanelKey.consumeClick()) {
+                openMainPanel();
+            }
         });
 
-        // 仅保留状态栏 HUD（轮盘已移除）
-        HudElementRegistry.attachElementBefore(
-                VanillaHudElements.CHAT,
-                Identifier.fromNamespaceAndPath(WeGuiMod.MOD_ID, "status_bar"),
-                (graphics, tickCounter) -> {
-                    Minecraft mc = Minecraft.getInstance();
-                    if (mc.player == null || !WeGuiConfigs.isStatusBarEnabled()) return;
-                    StatusBar.render(graphics, mc.font,
-                            mc.getWindow().getGuiScaledWidth(),
-                            mc.getWindow().getGuiScaledHeight());
-                });
+        StatusBar.register();
+        PastePreviewRenderer.register();
+    }
 
-        WeGuiMod.LOGGER.info("[WE GUI] 客户端初始化完成（MaLiLib 模式）");
+    private static void openMainPanel() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.screen != null) return;
+        mc.setScreen(new MainPanelScreen());
+    }
+
+    /**
+     * 更新打开主面板的按键绑定。
+     */
+    public static void updateKeyOpenPanel(int keyCode) {
+        Config.get().setKeyOpenPanel(keyCode);
+        if (openPanelKey != null) {
+            openPanelKey.setKey(InputConstants.Type.KEYSYM.createOrThrow(keyCode));
+        }
     }
 }

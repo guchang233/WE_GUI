@@ -1,19 +1,22 @@
 package com.sow.wegui;
 
+import com.sow.wegui.commands.WeCommands;
+import com.sow.wegui.config.Config;
 import net.fabricmc.api.ModInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * WE GUI 模组入口。
+ * WorldEdit GUI 模组主入口。
  */
-public final class WeGuiMod implements ModInitializer {
+public class WeGuiMod implements ModInitializer {
     public static final String MOD_ID = "wegui";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     @Override
     public void onInitialize() {
-        WeCommandRegistry.init();
-        LOGGER.info("[WE GUI] 已就绪，共 {} 条命令", WeCommandRegistry.getAll().size());
+        Config.load();
+        WeCommands.init();
+        LOGGER.info("WorldEdit GUI loaded.");
     }
 }
