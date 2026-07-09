@@ -52,7 +52,6 @@ public final class PastePreviewRenderer {
     private static void render(WorldRenderContext context) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
-        if (!Config.get().isPastePreviewEnabled()) return;
 
         Vec3 cam = context.gameRenderer().getMainCamera().position();
         PoseStack pose = context.matrices();
@@ -62,25 +61,43 @@ public final class PastePreviewRenderer {
         VertexConsumer buffer = context.consumers().getBuffer(RenderTypes.lines());
         Matrix4f matrix = pose.last().pose();
 
-        // 1) 当前 WorldEdit 选区（黄色）
-            if (Config.get().isSelectionBoundsEnabled()) {
-                WorldEditBridge.Bounds sel = WorldEditBridge.getSelectionBounds(mc);
-                if (sel != null) {
-                    AABB selectionBox = new AABB(sel.minX(), sel.minY(), sel.minZ(),
-                            sel.minX() + sel.w(), sel.minY() + sel.h(), sel.minZ() + sel.l());
-                    drawBox(buffer, matrix, selectionBox, 1.0f, 0.85f, 0.2f, 0.8f);
+        // 1) 当前 WorldEdit 选区
+        if (Config.get().isSelectionBoundsEnabled()) {
+            WorldEditBridge.Bounds sel = WorldEditBridge.getSelectionBounds(mc);
+            WorldEditBridge.CornerPositions corners = WorldEditBridge.getSelectionCorners(mc);
+            if (sel != null) {
+                AABB selectionBox = new AABB(sel.minX(), sel.minY(), sel.minZ(),
+                        sel.minX() + sel.w(), sel.minY() + sel.h(), sel.minZ() + sel.l());
+                float[] c = argb(Config.get().getSelectionBoxColor());
+                drawBox(buffer, matrix, selectionBox, c[0], c[1], c[2], c[3]);
+
+                // 为第一、二选点单独渲染小框架（投影同款）
+                if (corners != null) {
+                    float[] c1 = argb(Config.get().getSelectionPos1Color());
+                    float[] c2 = argb(Config.get().getSelectionPos2Color());
+                    drawCornerBox(buffer, matrix, corners.pos1(), c1[0], c1[1], c1[2], c1[3]);
+                    drawCornerBox(buffer, matrix, corners.pos2(), c2[0], c2[1], c2[2], c2[3]);
                 }
             }
+        }
 
-        // 2) copy 后的粘贴预览（绿色线框 + 半透明材质），原点在玩家所在方块
-        Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc);
-        if (blocks != null && !blocks.isEmpty()) {
-            BlockPos playerPos = BlockPos.containing(mc.player.getX(), mc.player.getY(), mc.player.getZ());
-            AABB pasteBox = computePasteBounds(blocks, playerPos);
-            drawBox(buffer, matrix, pasteBox, 0.3f, 1.0f, 0.5f, 0.8f);
+        // 2) copy 后的粘贴预览
+        if (Config.get().isPastePreviewEnabled()) {
+            Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc);
+            if (blocks != null && !blocks.isEmpty()) {
+                BlockPos playerPos = BlockPos.containing(mc.player.getX(), mc.player.getY(), mc.player.getZ());
+                AABB pasteBox = computePasteBounds(blocks, playerPos);
+                drawBox(buffer, matrix, pasteBox, 0.3f, 1.0f, 0.5f, 0.8f);
 
-            // 3) 真实材质半透明预览
-            renderGhostBlocks(mc, pose, context.consumers(), blocks, playerPos);
+                // 3) 真实材质半透明预览
+                renderGhostBlocks(mc, pose, context.consumers(), blocks, playerPos);
+
+                // 4) 每个非空气方块单独边框（投影同款）
+                if (Config.get().isBlockOutlineEnabled()) {
+                    float[] c = argb(Config.get().getBlockOutlineColor());
+                    renderBlockOutlines(buffer, matrix, blocks, playerPos, c[0], c[1], c[2], c[3]);
+                }
+            }
         }
 
         pose.popPose();
@@ -127,6 +144,36 @@ public final class PastePreviewRenderer {
             pose.translate(target.getX(), target.getY(), target.getZ());
             dispatcher.renderSingleBlock(state, pose, alphaSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
             pose.popPose();
+        }
+    }
+
+    private static float[] argb(int color) {
+        return new float[] {
+                ((color >> 16) & 0xFF) / 255f,
+                ((color >> 8) & 0xFF) / 255f,
+                (color & 0xFF) / 255f,
+                ((color >> 24) & 0xFF) / 255f
+        };
+    }
+
+    private static void drawCornerBox(VertexConsumer buffer, Matrix4f matrix, BlockPos pos,
+                                      float r, float g, float b, float a) {
+        float minX = pos.getX() - 0.125f;
+        float minY = pos.getY() - 0.125f;
+        float minZ = pos.getZ() - 0.125f;
+        float maxX = pos.getX() + 1.125f;
+        float maxY = pos.getY() + 1.125f;
+        float maxZ = pos.getZ() + 1.125f;
+        drawBox(buffer, matrix, new AABB(minX, minY, minZ, maxX, maxY, maxZ), r, g, b, a);
+    }
+
+    private static void renderBlockOutlines(VertexConsumer buffer, Matrix4f matrix,
+                                            Map<BlockPos, BlockState> blocks, BlockPos origin,
+                                            float r, float g, float b, float a) {
+        for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
+            BlockPos target = origin.offset(entry.getKey());
+            drawBox(buffer, matrix, new AABB(target.getX(), target.getY(), target.getZ(),
+                    target.getX() + 1, target.getY() + 1, target.getZ() + 1), r, g, b, a);
         }
     }
 

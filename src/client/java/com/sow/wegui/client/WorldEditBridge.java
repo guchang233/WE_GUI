@@ -6,6 +6,7 @@ import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.extension.platform.Capability;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.math.transform.Transform;
+import com.sk89q.worldedit.regions.CuboidRegion;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldedit.world.block.BaseBlock;
@@ -180,5 +181,28 @@ public final class WorldEditBridge {
     }
 
     public record Bounds(int minX, int minY, int minZ, int w, int h, int l) {
+    }
+
+    /**
+     * 获取 WorldEdit 选区的两个原始角点（pos1、pos2）。
+     * 仅对 CuboidRegion 有效，其他类型返回 null。
+     */
+    @Nullable
+    public static CornerPositions getSelectionCorners(Minecraft mc) {
+        if (mc.player == null) return null;
+        Region region = WorldEditAdapter.selection(mc.player);
+        if (!(region instanceof CuboidRegion cuboid)) return null;
+        try {
+            BlockVector3 p1 = cuboid.getPos1();
+            BlockVector3 p2 = cuboid.getPos2();
+            return new CornerPositions(
+                    new BlockPos(p1.x(), p1.y(), p1.z()),
+                    new BlockPos(p2.x(), p2.y(), p2.z()));
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    public record CornerPositions(BlockPos pos1, BlockPos pos2) {
     }
 }

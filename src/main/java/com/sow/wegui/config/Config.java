@@ -29,6 +29,7 @@ public class Config {
     private boolean pastePreviewEnabled = true;
     private boolean selectionBoundsEnabled = true;
     private int keyOpenPanel = GLFW.GLFW_KEY_G;
+    private int keyToggleAxeMode = GLFW.GLFW_KEY_M;
     private Anchor statusBarAnchor = Anchor.TOP_LEFT;
     private int statusBarOffsetX = 4;
     private int statusBarOffsetY = 4;
@@ -37,6 +38,19 @@ public class Config {
     private String lastSettingsTab = "CONFIG";
     private String lastConfigCategory = "GENERAL";
     private String lastFunctionCategory = "GENERAL";
+
+    // 选区/预览渲染颜色（ARGB）
+    public static final int DEFAULT_SELECTION_BOX_COLOR = 0xFFFFD200;
+    public static final int DEFAULT_SELECTION_POS1_COLOR = 0xFFFF1010;
+    public static final int DEFAULT_SELECTION_POS2_COLOR = 0xFF1010FF;
+    public static final int DEFAULT_BLOCK_OUTLINE_COLOR = 0xFF00FFFF;
+
+    private int selectionBoxColor = DEFAULT_SELECTION_BOX_COLOR;
+    private int selectionPos1Color = DEFAULT_SELECTION_POS1_COLOR;
+    private int selectionPos2Color = DEFAULT_SELECTION_POS2_COLOR;
+    private int blockOutlineColor = DEFAULT_BLOCK_OUTLINE_COLOR;
+    private boolean blockOutlineEnabled = false;
+
     private final List<WheelProfile> wheels = new ArrayList<>();
 
     private static Config INSTANCE;
@@ -107,6 +121,54 @@ public class Config {
 
     public void setKeyOpenPanel(int key) {
         keyOpenPanel = key;
+    }
+
+    public int getKeyToggleAxeMode() {
+        return keyToggleAxeMode;
+    }
+
+    public void setKeyToggleAxeMode(int key) {
+        keyToggleAxeMode = key;
+    }
+
+    public int getSelectionBoxColor() {
+        return selectionBoxColor;
+    }
+
+    public void setSelectionBoxColor(int color) {
+        this.selectionBoxColor = color;
+    }
+
+    public int getSelectionPos1Color() {
+        return selectionPos1Color;
+    }
+
+    public void setSelectionPos1Color(int color) {
+        this.selectionPos1Color = color;
+    }
+
+    public int getSelectionPos2Color() {
+        return selectionPos2Color;
+    }
+
+    public void setSelectionPos2Color(int color) {
+        this.selectionPos2Color = color;
+    }
+
+    public int getBlockOutlineColor() {
+        return blockOutlineColor;
+    }
+
+    public void setBlockOutlineColor(int color) {
+        this.blockOutlineColor = color;
+    }
+
+    public boolean isBlockOutlineEnabled() {
+        return blockOutlineEnabled;
+    }
+
+    public void setBlockOutlineEnabled(boolean enabled) {
+        this.blockOutlineEnabled = enabled;
     }
 
     public Anchor getStatusBarAnchor() {

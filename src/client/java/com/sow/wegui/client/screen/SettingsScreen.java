@@ -59,6 +59,16 @@ public class SettingsScreen extends BaseScreen {
     private EditBox line1Box;
     private EditBox line2Box;
 
+    // 颜色与方块描边
+    private Checkbox blockOutlineCheck;
+    private EditBox selectionBoxColorBox;
+    private EditBox selectionPos1ColorBox;
+    private EditBox selectionPos2ColorBox;
+    private EditBox blockOutlineColorBox;
+
+    // 按键绑定
+    private KeyButton toggleAxeModeKeyButton;
+
     public SettingsScreen(Screen parent) {
         super(Component.literal("WorldEdit GUI"));
         this.parent = parent;
@@ -95,6 +105,7 @@ public class SettingsScreen extends BaseScreen {
         categoryPanel = null;
         contentPanel = null;
         openPanelKeyButton = null;
+        toggleAxeModeKeyButton = null;
         statusBarCheck = null;
         pastePreviewCheck = null;
         selectionBoundsCheck = null;
@@ -103,6 +114,11 @@ public class SettingsScreen extends BaseScreen {
         offsetYBox = null;
         line1Box = null;
         line2Box = null;
+        blockOutlineCheck = null;
+        selectionBoxColorBox = null;
+        selectionPos1ColorBox = null;
+        selectionPos2ColorBox = null;
+        blockOutlineColorBox = null;
 
         buildTabs();
 
@@ -348,10 +364,48 @@ public class SettingsScreen extends BaseScreen {
         pastePreviewCheck = contentPanel.addCheckbox("启用粘贴预览", cfg.isPastePreviewEnabled(), 0, y);
         y += 26;
         selectionBoundsCheck = contentPanel.addCheckbox("显示 copy 选区框", cfg.isSelectionBoundsEnabled(), 0, y);
+        y += 26;
+        blockOutlineCheck = contentPanel.addCheckbox("为非空气方块添加单独边框", cfg.isBlockOutlineEnabled(), 0, y);
         y += 32;
-        contentPanel.addLabel("§7开启后，copy 结构会以半透明材质预览在玩家脚下。", 0, y);
+
+        contentPanel.addLabel("选区框颜色", 0, y);
+        selectionBoxColorBox = addColorRow(y, cfg.getSelectionBoxColor(), Config.DEFAULT_SELECTION_BOX_COLOR);
+        y += 42;
+
+        contentPanel.addLabel("第一选点 (pos1) 颜色", 0, y);
+        selectionPos1ColorBox = addColorRow(y, cfg.getSelectionPos1Color(), Config.DEFAULT_SELECTION_POS1_COLOR);
+        y += 42;
+
+        contentPanel.addLabel("第二选点 (pos2) 颜色", 0, y);
+        selectionPos2ColorBox = addColorRow(y, cfg.getSelectionPos2Color(), Config.DEFAULT_SELECTION_POS2_COLOR);
+        y += 42;
+
+        contentPanel.addLabel("方块边框颜色", 0, y);
+        blockOutlineColorBox = addColorRow(y, cfg.getBlockOutlineColor(), Config.DEFAULT_BLOCK_OUTLINE_COLOR);
+        y += 42;
+
+        contentPanel.addLabel("§7颜色格式为 8 位 ARGB 十六进制，例如 FFFFD200。", 0, y);
         y += 12;
         contentPanel.addLabel("§7执行 //flip、//rotate 后会自动刷新预览。", 0, y);
+    }
+
+    private EditBox addColorRow(int y, int currentColor, int defaultColor) {
+        int boxW = 90;
+        int btnW = 44;
+        int gap = 6;
+        int totalW = boxW + gap + btnW;
+        int startX = Math.max(0, contentPanel.getWidth() - totalW);
+
+        EditBox box = new EditBox(font, 0, 0, boxW, 18, Component.literal("颜色"));
+        box.setValue(String.format("%08X", currentColor));
+        box.setMaxLength(8);
+        contentPanel.addWidget(box, startX, y);
+
+        Button reset = Button.builder(Component.literal("重置"), b -> box.setValue(String.format("%08X", defaultColor)))
+                .bounds(0, 0, btnW, 18)
+                .build();
+        contentPanel.addWidget(reset, startX + boxW + gap, y);
+        return box;
     }
 
     private void buildKeybindsPanel() {
@@ -366,14 +420,28 @@ public class SettingsScreen extends BaseScreen {
         contentPanel.addWidget(openPanelKeyButton, 0, y + 12);
         y += 42;
 
+        contentPanel.addLabel("切换小木斧模式（正常 / 编辑选区）", 0, y);
+        toggleAxeModeKeyButton = new KeyButton(0, y + 12, contentPanel.getWidth(), 20,
+                cfg.getKeyToggleAxeMode(), k -> {});
+        contentPanel.addWidget(toggleAxeModeKeyButton, 0, y + 12);
+        y += 42;
+
         contentPanel.addLabel("§7点击按钮后按下任意键即可修改绑定，按 Esc 取消。", 0, y);
     }
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (openPanelKeyButton != null && openPanelKeyButton.isWaiting() && event.key() != GLFW.GLFW_KEY_ESCAPE) {
+        if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
+            return super.keyPressed(event);
+        }
+        if (openPanelKeyButton != null && openPanelKeyButton.isWaiting()) {
             openPanelKeyButton.setKeyCode(event.key());
             openPanelKeyButton.setWaiting(false);
+            return true;
+        }
+        if (toggleAxeModeKeyButton != null && toggleAxeModeKeyButton.isWaiting()) {
+            toggleAxeModeKeyButton.setKeyCode(event.key());
+            toggleAxeModeKeyButton.setWaiting(false);
             return true;
         }
         return super.keyPressed(event);
@@ -384,12 +452,18 @@ public class SettingsScreen extends BaseScreen {
         if (statusBarCheck != null) cfg.setStatusBarEnabled(statusBarCheck.selected());
         if (pastePreviewCheck != null) cfg.setPastePreviewEnabled(pastePreviewCheck.selected());
         if (selectionBoundsCheck != null) cfg.setSelectionBoundsEnabled(selectionBoundsCheck.selected());
+        if (blockOutlineCheck != null) cfg.setBlockOutlineEnabled(blockOutlineCheck.selected());
         if (anchorButton != null) cfg.setStatusBarAnchor(anchorButton.getValue());
         if (offsetXBox != null) cfg.setStatusBarOffsetX(parseInt(offsetXBox.getValue(), cfg.getStatusBarOffsetX()));
         if (offsetYBox != null) cfg.setStatusBarOffsetY(parseInt(offsetYBox.getValue(), cfg.getStatusBarOffsetY()));
         if (line1Box != null) cfg.setStatusBarLine1(line1Box.getValue());
         if (line2Box != null) cfg.setStatusBarLine2(line2Box.getValue());
+        if (selectionBoxColorBox != null) cfg.setSelectionBoxColor(parseHexColor(selectionBoxColorBox.getValue(), cfg.getSelectionBoxColor()));
+        if (selectionPos1ColorBox != null) cfg.setSelectionPos1Color(parseHexColor(selectionPos1ColorBox.getValue(), cfg.getSelectionPos1Color()));
+        if (selectionPos2ColorBox != null) cfg.setSelectionPos2Color(parseHexColor(selectionPos2ColorBox.getValue(), cfg.getSelectionPos2Color()));
+        if (blockOutlineColorBox != null) cfg.setBlockOutlineColor(parseHexColor(blockOutlineColorBox.getValue(), cfg.getBlockOutlineColor()));
         if (openPanelKeyButton != null) WeGuiClient.updateKeyOpenPanel(openPanelKeyButton.getKeyCode());
+        if (toggleAxeModeKeyButton != null) WeGuiClient.updateKeyToggleAxeMode(toggleAxeModeKeyButton.getKeyCode());
         Config.save();
         onClose();
     }
@@ -397,6 +471,16 @@ public class SettingsScreen extends BaseScreen {
     private int parseInt(String s, int fallback) {
         try {
             return Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private int parseHexColor(String s, int fallback) {
+        try {
+            String hex = s.trim().replace("#", "");
+            if (hex.length() == 6) hex = "FF" + hex;
+            return (int) Long.parseLong(hex, 16);
         } catch (NumberFormatException e) {
             return fallback;
         }

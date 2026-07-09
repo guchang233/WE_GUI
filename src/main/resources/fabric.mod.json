@@ -4,9 +4,9 @@
   "version": "${version}",
   "name": "WorldEdit GUI",
   "description": "WorldEdit 可视化助手 — 快捷轮盘与分类 GUI 面板",
-  "authors": ["Gu"],
+  "authors": ["${author}"],
   "contact": {
-    "homepage": "https://github.com/sow/wegui"
+    "homepage": "https://github.com/guchang233/WE_GUI/"
   },
   "license": "MIT",
   "environment": "*",
@@ -14,6 +14,9 @@
     "main": ["com.sow.wegui.WeGuiMod"],
     "client": ["com.sow.wegui.client.WeGuiClient"]
   },
+  "mixins": [
+    "wegui.client.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.18.4",
     "minecraft": "~1.21.11",

@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.world.item.Items;
 
 /**
  * 在 HUD 上实时显示 WorldEdit 选区状态。
@@ -57,5 +58,23 @@ public final class StatusBar {
         if (!line2.isBlank()) {
             g.drawString(mc.font, line2, x + 4, y + 3 + h + 1, 0xFFAAAAAA);
         }
+
+        renderAxeModeIndicator(g, mc, sw, sh);
+    }
+
+    private static void renderAxeModeIndicator(GuiGraphics g, Minecraft mc, int sw, int sh) {
+        if (mc.player == null || mc.screen != null) return;
+        if (AxeModeHandler.getMode() != AxeModeHandler.AxeMode.EDIT_SELECTION) return;
+        if (!mc.player.getMainHandItem().is(Items.WOODEN_AXE)
+                && !mc.player.getOffhandItem().is(Items.WOODEN_AXE)) {
+            return;
+        }
+
+        String text = "§a[WE GUI] §f小木斧: 编辑选区模式 §7(Alt+滚轮移动)";
+        int w = mc.font.width(text);
+        int x = 4;
+        int y = sh - mc.font.lineHeight - 4;
+        g.fill(x - 2, y - 2, x + w + 4, y + mc.font.lineHeight + 2, 0xAA000000);
+        g.drawString(mc.font, text, x, y, 0xFFFFFFFF);
     }
 }

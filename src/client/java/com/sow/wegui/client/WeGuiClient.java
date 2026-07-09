@@ -14,7 +14,9 @@ import net.minecraft.client.Minecraft;
  */
 public class WeGuiClient implements ClientModInitializer {
     public static final String KEY_OPEN_PANEL = "key.wegui.open_panel";
+    public static final String KEY_TOGGLE_AXE_MODE = "key.wegui.toggle_axe_mode";
     private static KeyMapping openPanelKey;
+    private static KeyMapping toggleAxeModeKey;
 
     @Override
     public void onInitializeClient() {
@@ -25,15 +27,25 @@ public class WeGuiClient implements ClientModInitializer {
                 Config.get().getKeyOpenPanel(),
                 KeyMapping.Category.MISC
         ));
+        toggleAxeModeKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                KEY_TOGGLE_AXE_MODE,
+                InputConstants.Type.KEYSYM,
+                Config.get().getKeyToggleAxeMode(),
+                KeyMapping.Category.MISC
+        ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (openPanelKey.consumeClick()) {
                 openMainPanel();
             }
+            if (toggleAxeModeKey.consumeClick()) {
+                AxeModeHandler.toggleMode();
+            }
         });
 
         StatusBar.register();
         PastePreviewRenderer.register();
+        AxeModeHandler.register();
     }
 
     private static void openMainPanel() {
@@ -49,6 +61,16 @@ public class WeGuiClient implements ClientModInitializer {
         Config.get().setKeyOpenPanel(keyCode);
         if (openPanelKey != null) {
             openPanelKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(keyCode));
+        }
+    }
+
+    /**
+     * 更新切换小木斧模式的按键绑定。
+     */
+    public static void updateKeyToggleAxeMode(int keyCode) {
+        Config.get().setKeyToggleAxeMode(keyCode);
+        if (toggleAxeModeKey != null) {
+            toggleAxeModeKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(keyCode));
         }
     }
 }
