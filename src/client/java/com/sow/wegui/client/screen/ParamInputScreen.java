@@ -1,178 +1,194 @@
 package com.sow.wegui.client.screen;
 
-import com.sow.wegui.commands.WeCommands.Command;
-import com.sow.wegui.commands.WeCommands.Option;
-import com.sow.wegui.commands.WeCommands.Param;
-import com.sow.wegui.commands.WeCommands.ParamType;
-import com.sow.wegui.commands.WeCommands.Usage;
+import com.sow.wegui.client.CommandHistory;
 import com.sow.wegui.client.CommandSender;
+import com.sow.wegui.commands.WeCommands.Command;
+import com.sow.wegui.commands.WeCommands.Param;
+import com.sow.wegui.commands.WeCommands.Usage;
+import com.sow.wegui.client.screen.widget.IParamControl;
+import com.sow.wegui.client.screen.widget.ParamControlFactory;
 import fi.dy.masa.malilib.gui.GuiBase;
-import fi.dy.masa.malilib.gui.GuiTextFieldGeneric;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
-import fi.dy.masa.malilib.interfaces.IStringRetriever;
-import fi.dy.masa.malilib.gui.widgets.WidgetDropDownList;
 import fi.dy.masa.malilib.render.GuiContext;
-import fi.dy.masa.malilib.gui.wrappers.TextFieldWrapper;
 import fi.dy.masa.malilib.util.StringUtils;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.network.chat.Component;
+import net.minecraft.client.input.KeyEvent;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 参数输入界面：为具体命令用法填写参数，并以中文释义和下拉框辅助输入（malilib 风格）。
+ * 参数输入界面：两列表单、按类型自动选择控件、实时预览、基础校验、多用法页内切换。
  */
 public class ParamInputScreen extends GuiBase {
     private static final int MARGIN_X = 20;
-    private static final int CONTENT_TOP = 48;
-    private static final int BOTTOM_AREA = 42;
-    private static final int ROW_HEIGHT = 50;
+    private static final int CONTENT_TOP = 52;
+    private static final int BOTTOM_AREA = 46;
+    private static final int ROW_HEIGHT = 44;
+    private static final int LABEL_COL_W = 120;
+    private static final int GAP = 12;
+    private static final int USAGE_BTN_HEIGHT = 14;
+    private static final int USAGE_GAP = 4;
 
     private final Screen parent;
     private final Command command;
-    private final Usage usage;
+    private final List<Usage> usages;
+    private Usage selectedUsage;
     private final List<ParamRow> rows = new ArrayList<>();
     private final List<String> headerLines = new ArrayList<>();
+    private String errorMessage = "";
+    private int focusedIndex = -1;
 
     public ParamInputScreen(Screen parent, Command command, Usage usage) {
         this.setParent(parent);
         this.parent = parent;
         this.command = command;
-        this.usage = usage;
+        this.usages = new ArrayList<>(command.usages());
+        this.selectedUsage = usage != null && usages.contains(usage) ? usage : (usages.isEmpty() ? null : usages.get(0));
         this.setTitle(command.displayName());
     }
 
     @Override
     public void initGui() {
         super.initGui();
+        rebuildAll();
+    }
 
-        int maxW = this.width - MARGIN_X * 2;
+    private void rebuildAll() {
+        this.clearElements();
+        rows.clear();
         headerLines.clear();
-        headerLines.addAll(splitLines("用法: " + usage.displayTemplate(), maxW));
-        if (!usage.description().isBlank()) {
-            headerLines.addAll(splitLines(usage.description(), maxW));
+        focusedIndex = -1;
+
+        rebuildHeader();
+        rebuildUsageSelector();
+        rebuildParams();
+        addButtons();
+    }
+
+    private void rebuildHeader() {
+        int maxW = this.width - MARGIN_X * 2;
+        if (selectedUsage != null) {
+            headerLines.addAll(splitLines("用法: " + selectedUsage.displayTemplate(), maxW));
+            if (!selectedUsage.description().isBlank()) {
+                headerLines.addAll(splitLines(selectedUsage.description(), maxW));
+            }
         }
         if (!command.description().isBlank()) {
             headerLines.addAll(splitLines(command.description(), maxW));
         }
-        int headerH = headerLines.size() * (this.fontHeight + 1) + 8;
+    }
 
-        rows.clear();
-        List<Param> params = usage.params();
-        int y = CONTENT_TOP + headerH;
-        for (Param param : params) {
-            addParamRow(param, MARGIN_X, y, maxW);
+    private void rebuildUsageSelector() {
+        if (usages.size() <= 1 || selectedUsage == null) {
+            return;
+        }
+
+        int y = CONTENT_TOP + headerLines.size() * (this.fontHeight + 1) + 6;
+        int x = MARGIN_X;
+        int remaining = this.width - MARGIN_X * 2;
+
+        int maxUsageWidth = (int) (this.width * 0.4);
+        for (Usage usage : usages) {
+            String label = usage.description();
+            if (label == null || label.isBlank()) label = usage.displayTemplate();
+            int desired = Math.max(this.font.width(label) + 12, 48);
+            int w = Math.min(Math.min(desired, maxUsageWidth), remaining);
+            if (this.font.width(label) + 12 > w) {
+                for (int i = label.length(); i > 0; i--) {
+                    String candidate = label.substring(0, i) + "…";
+                    if (this.font.width(candidate) + 12 <= w) {
+                        label = candidate;
+                        break;
+                    }
+                }
+            }
+            if (x + w > this.width - MARGIN_X) {
+                x = MARGIN_X;
+                y += USAGE_BTN_HEIGHT + USAGE_GAP;
+            }
+            ButtonGeneric btn = new ButtonGeneric(x, y, w, USAGE_BTN_HEIGHT, label);
+            btn.setEnabled(usage != selectedUsage);
+            if (!usage.description().isBlank()) {
+                btn.setHoverStrings(usage.description());
+            }
+            this.addButton(btn, new UsageButtonListener(this, usage));
+            x += w + USAGE_GAP;
+        }
+    }
+
+    private void rebuildParams() {
+        if (selectedUsage == null) return;
+
+        int selectorLines = usages.size() <= 1 ? 0 : 1;
+        int startY = CONTENT_TOP + headerLines.size() * (this.fontHeight + 1) + 10 + selectorLines * (USAGE_BTN_HEIGHT + USAGE_GAP);
+        int controlX = MARGIN_X + LABEL_COL_W + GAP;
+        int controlW = this.width - controlX - MARGIN_X;
+
+        int y = startY;
+        for (Param param : selectedUsage.params()) {
+            addParamRow(param, MARGIN_X, y, LABEL_COL_W, controlX, controlW);
             y += ROW_HEIGHT;
         }
 
-        int bw = 70;
-        ButtonGeneric exec = new ButtonGeneric(this.width / 2 - bw - 5, this.height - 28, bw, 20, StringUtils.translate("wegui.command.execute"));
+        if (!rows.isEmpty()) {
+            focusedIndex = 0;
+            rows.get(0).control.setFocused(true);
+        }
+    }
+
+    private void addButtons() {
+        int bw = 80;
+        ButtonGeneric exec = new ButtonGeneric(this.width / 2 - bw - 6, this.height - 30, bw, 20, StringUtils.translate("wegui.command.execute"));
         this.addButton(exec, (btn, mouseButton) -> execute());
 
-        ButtonGeneric back = new ButtonGeneric(this.width / 2 + 5, this.height - 28, bw, 20, StringUtils.translate("wegui.command.back"));
+        ButtonGeneric back = new ButtonGeneric(this.width / 2 + 6, this.height - 30, bw, 20, StringUtils.translate("wegui.command.back"));
         this.addButton(back, (btn, mouseButton) -> this.mc.setScreen(parent));
     }
 
-    private void addParamRow(Param param, int x, int y, int w) {
-        this.addLabel(x, y, w, 12, 0xFFFFFF00, param.name());
+    private void addParamRow(Param param, int labelX, int y, int labelW, int controlX, int controlW) {
+        this.addLabel(labelX, y, labelW, 12, 0xFFFFFF00, param.name());
 
         String desc = descriptionOf(param);
         if (!desc.isBlank()) {
-            this.addLabel(x, y + 34, w, 12, 0xFFAAAAAA, desc);
+            this.addLabel(labelX, y + 12, labelW, 12, 0xFFAAAAAA, desc);
         }
 
-        InputControl control = createControl(param, x, y + 12, w);
+        IParamControl control = ParamControlFactory.create(this, controlX, y, controlW, param);
         rows.add(new ParamRow(param, control));
     }
 
-    private InputControl createControl(Param param, int x, int y, int w) {
-        return switch (param.paramType()) {
-            case FLAG -> {
-                String flagValue = param.defaultValue() == null ? "" : param.defaultValue();
-                FlagButton button = new FlagButton(x, y, w, 20, param.name(), flagValue);
-                this.addButton(button.getButton(), (btn, mouseButton) -> button.toggle());
-                yield button;
-            }
-            case ENUM -> {
-                List<Option> opts = param.options();
-                Option initial = opts.isEmpty() ? null : opts.get(0);
-                if (param.defaultValue() != null) {
-                    for (Option o : opts) {
-                        if (o.value().equals(param.defaultValue())) {
-                            initial = o;
-                            break;
-                        }
-                    }
-                }
-                IStringRetriever<Option> retriever = opt -> opt == null ? "" : opt.label();
-                WidgetDropDownList<Option> dropdown = new WidgetDropDownList<>(x, y, w, 18, 160, 12, opts, retriever);
-                if (initial != null) {
-                    dropdown.setSelectedEntry(initial);
-                }
-                this.addWidget(dropdown);
-                yield new EnumDropdown(dropdown);
-            }
-            case PATTERN, MASK -> createItemPickerControl(param, x, y, w);
-            default -> {
-                GuiTextFieldGeneric field = new GuiTextFieldGeneric(x, y, w, 18, this.font);
-                String def = param.defaultValue() == null ? "" : param.defaultValue();
-                field.setValue(def);
-                if (param.hint() != null && !param.hint().isBlank()) {
-                    field.setHint(net.minecraft.network.chat.Component.literal(param.hint()));
-                }
-                field.setMaxLength(256);
-                TextFieldWrapper<GuiTextFieldGeneric> wrapper = this.addTextField(field, (textField) -> true);
-                yield new TextInput(wrapper);
-            }
-        };
-    }
-
-    private InputControl createItemPickerControl(Param param, int x, int y, int w) {
-        int btnW = 24;
-        int gap = 4;
-        int fieldW = w - btnW - gap;
-
-        GuiTextFieldGeneric field = new GuiTextFieldGeneric(x, y, fieldW, 18, this.font);
-        String def = param.defaultValue() == null ? "" : param.defaultValue();
-        field.setValue(def);
-        if (param.hint() != null && !param.hint().isBlank()) {
-            field.setHint(Component.literal(param.hint()));
-        }
-        field.setMaxLength(256);
-        TextFieldWrapper<GuiTextFieldGeneric> wrapper = this.addTextField(field, (textField) -> true);
-
-        ButtonGeneric pick = new ButtonGeneric(x + fieldW + gap, y, btnW, 18, StringUtils.translate("wegui.picker.button"));
-        this.addButton(pick, (btn, mouseButton) -> this.mc.setScreen(new InventoryPickerScreen(this, id -> {
-            // 关闭选择器后会重新进入 ParamInputScreen，这里通过 schedule 在下一 tick 设置值
-            wrapper.textField().setValue(id);
-            wrapper.textField().setCursorPosition(id.length());
-        })));
-
-        return new TextInput(wrapper);
-    }
-
-    private String collectValue(ParamRow row) {
-        return row.control.getValue();
+    private void onUsageSelected(Usage usage) {
+        if (usage == selectedUsage) return;
+        selectedUsage = usage;
+        rebuildAll();
     }
 
     private void execute() {
+        errorMessage = "";
         List<String> values = new ArrayList<>();
         for (ParamRow row : rows) {
-            values.add(collectValue(row));
+            if (!row.control.isValid(row.param)) {
+                errorMessage = StringUtils.translate("wegui.param.invalid", row.param.name());
+                return;
+            }
+            values.add(row.control.getValue());
         }
-        String commandLine = usage.buildCommand(values);
+        String commandLine = selectedUsage.buildCommand(values);
         CommandSender.send(commandLine);
+        CommandHistory.recordRecent(command.id());
         this.mc.setScreen(null);
     }
 
     private String computePreview() {
+        if (selectedUsage == null) return "";
         List<String> values = new ArrayList<>();
         for (ParamRow row : rows) {
-            values.add(collectValue(row));
+            values.add(row.control.getValue());
         }
-        return "§7" + usage.buildCommand(values);
+        return selectedUsage.buildCommand(values);
     }
 
     @Override
@@ -182,7 +198,49 @@ public class ParamInputScreen extends GuiBase {
             this.drawString(ctx, line, MARGIN_X, y, 0xFFFFFFFF);
             y += this.fontHeight + 1;
         }
-        this.drawString(ctx, computePreview(), MARGIN_X, this.height - 40, 0xFFAAAAAA);
+
+        int previewY = this.height - 46;
+        String preview = computePreview();
+        int maxPreviewWidth = this.width - MARGIN_X * 2;
+        String displayPreview = "§7" + truncateText(preview, maxPreviewWidth);
+        this.drawString(ctx, displayPreview, MARGIN_X, previewY, 0xFFFFFFFF);
+
+        if (!errorMessage.isEmpty()) {
+            this.drawString(ctx, "§c" + errorMessage, MARGIN_X, previewY - 14, 0xFFFFFFFF);
+        }
+    }
+
+    private String truncateText(String text, int maxWidth) {
+        if (this.font.width(text) <= maxWidth) {
+            return text;
+        }
+        for (int i = text.length(); i > 0; i--) {
+            String candidate = text.substring(0, i) + "…";
+            if (this.font.width(candidate) <= maxWidth) {
+                return candidate;
+            }
+        }
+        return text;
+    }
+
+    @Override
+    public boolean keyPressed(KeyEvent event) {
+        if (event.key() == GLFW.GLFW_KEY_TAB && !rows.isEmpty()) {
+            boolean shift = GuiBase.isShiftDown();
+            if (focusedIndex >= 0 && focusedIndex < rows.size()) {
+                rows.get(focusedIndex).control.setFocused(false);
+            }
+            if (shift) {
+                focusedIndex--;
+                if (focusedIndex < 0) focusedIndex = rows.size() - 1;
+            } else {
+                focusedIndex++;
+                if (focusedIndex >= rows.size()) focusedIndex = 0;
+            }
+            rows.get(focusedIndex).control.setFocused(true);
+            return true;
+        }
+        return super.keyPressed(event);
     }
 
     private List<String> splitLines(String text, int maxWidth) {
@@ -215,72 +273,13 @@ public class ParamInputScreen extends GuiBase {
         return h == null ? "" : h;
     }
 
-    private interface InputControl {
-        String getValue();
+    private record ParamRow(Param param, IParamControl control) {
     }
 
-    private record ParamRow(Param param, InputControl control) {
-    }
-
-    private final class FlagButton implements InputControl {
-        private final ButtonGeneric button;
-        private final String flagValue;
-        private boolean checked;
-
-        FlagButton(int x, int y, int w, int h, String name, String flagValue) {
-            this.flagValue = flagValue;
-            this.button = new ButtonGeneric(x, y, w, h, "");
-            updateLabel(name);
-        }
-
-        void toggle() {
-            checked = !checked;
-            updateLabel();
-        }
-
+    private record UsageButtonListener(ParamInputScreen screen, Usage usage) implements IButtonActionListener {
         @Override
-        public String getValue() {
-            return checked ? flagValue : "";
-        }
-
-        ButtonGeneric getButton() {
-            return button;
-        }
-
-        private void updateLabel() {
-            updateLabel(button.getHoverStrings().isEmpty() ? "" : button.getHoverStrings().get(0));
-        }
-
-        private void updateLabel(String name) {
-            button.setDisplayString((checked ? "[√] " : "[ ] ") + name);
-            button.setHoverStrings(name);
-        }
-    }
-
-    private final class EnumDropdown implements InputControl {
-        private final WidgetDropDownList<Option> dropdown;
-
-        EnumDropdown(WidgetDropDownList<Option> dropdown) {
-            this.dropdown = dropdown;
-        }
-
-        @Override
-        public String getValue() {
-            Option opt = dropdown.getSelectedEntry();
-            return opt == null ? "" : opt.value();
-        }
-    }
-
-    private final class TextInput implements InputControl {
-        private final TextFieldWrapper<GuiTextFieldGeneric> wrapper;
-
-        TextInput(TextFieldWrapper<GuiTextFieldGeneric> wrapper) {
-            this.wrapper = wrapper;
-        }
-
-        @Override
-        public String getValue() {
-            return wrapper.textField().getValue();
+        public void actionPerformedWithButton(fi.dy.masa.malilib.gui.button.ButtonBase button, int mouseButton) {
+            screen.onUsageSelected(usage);
         }
     }
 }

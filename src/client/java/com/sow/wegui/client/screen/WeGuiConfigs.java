@@ -51,6 +51,8 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
             configs = Configs.PastePreview.OPTIONS;
         } else if (tab == ConfigGuiTab.MODE_INDICATOR) {
             configs = Configs.ModeIndicator.OPTIONS;
+        } else if (tab == ConfigGuiTab.COMMAND_PANEL) {
+            configs = Configs.CommandPanel.OPTIONS;
         } else if (tab == ConfigGuiTab.HOTKEYS) {
             configs = Configs.Hotkeys.OPTIONS;
         } else {
@@ -72,6 +74,7 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         configs.addAll(ConfigOptionWrapper.createFor(Configs.StatusBar.OPTIONS));
         configs.addAll(ConfigOptionWrapper.createFor(Configs.PastePreview.OPTIONS));
         configs.addAll(ConfigOptionWrapper.createFor(Configs.ModeIndicator.OPTIONS));
+        configs.addAll(ConfigOptionWrapper.createFor(Configs.CommandPanel.OPTIONS));
         configs.addAll(ConfigOptionWrapper.createFor(Configs.Hotkeys.OPTIONS));
         return configs;
     }
@@ -129,6 +132,7 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         STATUS_BAR("wegui.config.tab.status_bar"),
         PASTE_PREVIEW("wegui.config.tab.paste_preview"),
         MODE_INDICATOR("wegui.config.tab.mode_indicator"),
+        COMMAND_PANEL("wegui.config.tab.command_panel"),
         HOTKEYS("wegui.config.tab.hotkeys");
 
         private final String translationKey;

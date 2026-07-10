@@ -56,6 +56,18 @@
   "wegui.config.mode_indicator.name.modeIndicatorScale": "模式栏缩放",
   "wegui.config.mode_indicator.comment.modeIndicatorScale": "以百分比调整模式栏大小",
 
+  "wegui.config.tab.command_panel": "命令面板",
+  "wegui.config.command_panel.name.commandPanelShowDescription": "显示命令描述",
+  "wegui.config.command_panel.comment.commandPanelShowDescription": "在命令列表中显示命令模板等描述信息",
+  "wegui.config.command_panel.name.commandPanelCompactMode": "紧凑模式",
+  "wegui.config.command_panel.comment.commandPanelCompactMode": "缩小行高以显示更多命令",
+  "wegui.config.command_panel.name.commandPanelFavorites": "收藏命令",
+  "wegui.config.command_panel.comment.commandPanelFavorites": "内部使用，请勿手动修改",
+  "wegui.config.command_panel.name.commandPanelRecentCommands": "最近使用命令",
+  "wegui.config.command_panel.comment.commandPanelRecentCommands": "内部使用，请勿手动修改",
+  "wegui.config.command_panel.name.commandPanelMaxRecent": "最大最近数量",
+  "wegui.config.command_panel.comment.commandPanelMaxRecent": "最近使用列表最多保留多少条",
+
   "wegui.config.hotkeys.name.openGui": "打开 WE GUI 面板",
   "wegui.config.hotkeys.comment.openGui": "打开 WorldEdit 命令图形面板",
 
@@ -70,9 +82,17 @@
   "wegui.command.category_label": "分类",
   "wegui.command.bind_wand": "绑定当前物品为魔杖",
   "wegui.command.open_panel": "WE 面板",
+  "wegui.command.search_hint": "搜索命令、别名、模板...",
+  "wegui.command.favorites": "收藏",
+  "wegui.command.recent": "最近使用",
 
   "wegui.picker.title": "选择物品",
   "wegui.picker.button": "选",
+  "wegui.picker.search": "搜索...",
+  "wegui.picker.no_results": "无匹配结果",
+  "wegui.picker.more_results": "还有 %s 条结果未显示",
+
+  "wegui.param.invalid": "参数“%s”填写不正确",
 
   "wegui.category.general": "通用",
   "wegui.category.selection": "选区",

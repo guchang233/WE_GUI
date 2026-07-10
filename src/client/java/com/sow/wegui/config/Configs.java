@@ -36,6 +36,7 @@ public class Configs implements IConfigHandler {
     private static final String STATUS_BAR_KEY = WeGuiMod.MOD_ID + ".config.status_bar";
     private static final String PASTE_PREVIEW_KEY = WeGuiMod.MOD_ID + ".config.paste_preview";
     private static final String MODE_INDICATOR_KEY = WeGuiMod.MOD_ID + ".config.mode_indicator";
+    private static final String COMMAND_PANEL_KEY = WeGuiMod.MOD_ID + ".config.command_panel";
     private static final String HOTKEYS_KEY = WeGuiMod.MOD_ID + ".config.hotkeys";
     private static final String INTERNAL_KEY = WeGuiMod.MOD_ID + ".config.internal";
 
@@ -109,6 +110,22 @@ public class Configs implements IConfigHandler {
         );
     }
 
+    public static class CommandPanel {
+        public static final ConfigBoolean SHOW_DESCRIPTION = new ConfigBoolean("commandPanelShowDescription", true).apply(COMMAND_PANEL_KEY);
+        public static final ConfigBoolean COMPACT_MODE = new ConfigBoolean("commandPanelCompactMode", false).apply(COMMAND_PANEL_KEY);
+        public static final ConfigString FAVORITES = new ConfigString("commandPanelFavorites", "").apply(COMMAND_PANEL_KEY);
+        public static final ConfigString RECENT_COMMANDS = new ConfigString("commandPanelRecentCommands", "").apply(COMMAND_PANEL_KEY);
+        public static final ConfigInteger MAX_RECENT = new ConfigInteger("commandPanelMaxRecent", 10, 0, 50).apply(COMMAND_PANEL_KEY);
+
+        public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                SHOW_DESCRIPTION,
+                COMPACT_MODE,
+                FAVORITES,
+                RECENT_COMMANDS,
+                MAX_RECENT
+        );
+    }
+
     public static class Hotkeys {
         public static final ConfigHotkey OPEN_GUI = new ConfigHotkey("openGui", "G").apply(HOTKEYS_KEY);
 
@@ -132,6 +149,7 @@ public class Configs implements IConfigHandler {
                 ConfigUtils.readConfigBase(root, "StatusBar", StatusBar.OPTIONS);
                 ConfigUtils.readConfigBase(root, "PastePreview", PastePreview.OPTIONS);
                 ConfigUtils.readConfigBase(root, "ModeIndicator", ModeIndicator.OPTIONS);
+                ConfigUtils.readConfigBase(root, "CommandPanel", CommandPanel.OPTIONS);
                 ConfigUtils.readConfigBase(root, "Hotkeys", Hotkeys.OPTIONS);
                 ConfigUtils.readConfigBase(root, "Internal", Internal.OPTIONS);
             } else {
@@ -151,6 +169,7 @@ public class Configs implements IConfigHandler {
             ConfigUtils.writeConfigBase(root, "StatusBar", StatusBar.OPTIONS);
             ConfigUtils.writeConfigBase(root, "PastePreview", PastePreview.OPTIONS);
             ConfigUtils.writeConfigBase(root, "ModeIndicator", ModeIndicator.OPTIONS);
+            ConfigUtils.writeConfigBase(root, "CommandPanel", CommandPanel.OPTIONS);
             ConfigUtils.writeConfigBase(root, "Hotkeys", Hotkeys.OPTIONS);
             ConfigUtils.writeConfigBase(root, "Internal", Internal.OPTIONS);
             JsonUtils.writeJsonToFileAsPath(root, dir.resolve(CONFIG_FILE_NAME));

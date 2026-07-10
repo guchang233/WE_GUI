@@ -3,15 +3,19 @@ package com.sow.wegui.client.screen;
 import com.sow.wegui.commands.WeCommands;
 import com.sow.wegui.commands.WeCommands.Category;
 import com.sow.wegui.commands.WeCommands.Command;
+import com.sow.wegui.client.CommandHistory;
+import com.sow.wegui.config.Configs;
 import fi.dy.masa.malilib.gui.widgets.WidgetListBase;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * malilib 命令列表控件，按当前选中的分类过滤 WorldEdit 命令。
- * 每个列表条目容纳两列命令按钮。
+ * malilib 命令列表控件，按当前选中的分类/收藏/最近使用/搜索词过滤 WorldEdit 命令。
+ * 每个列表条目只显示一个命令（紧凑列表）。
  */
 public class WidgetListCommands extends WidgetListBase<CommandRow, WidgetCommandEntry> {
     private final WeCommandScreen parent;
@@ -19,7 +23,7 @@ public class WidgetListCommands extends WidgetListBase<CommandRow, WidgetCommand
     public WidgetListCommands(int x, int y, int width, int height, WeCommandScreen parent) {
         super(x, y, width, height, parent);
         this.parent = parent;
-        this.entryHeight = 26;
+        this.entryHeight = Configs.CommandPanel.COMPACT_MODE.getBooleanValue() ? 20 : 22;
         this.allowMultiSelection = false;
         this.shouldSortList = false;
         this.allowKeyboardNavigation = false;
@@ -28,18 +32,59 @@ public class WidgetListCommands extends WidgetListBase<CommandRow, WidgetCommand
     @Override
     protected Collection<CommandRow> getAllEntries() {
         WeCommands.init();
-        Category category = parent.getSelectedCategory();
-        List<Command> commands = category == null
-                ? new ArrayList<>(WeCommands.all())
-                : new ArrayList<>(WeCommands.byCategory(category));
 
+        List<Command> source;
+        WeCommandScreen.FilterMode mode = parent.getSelectedFilterMode();
+
+        switch (mode) {
+            case FAVORITES -> {
+                List<String> ids = CommandHistory.getFavorites();
+                source = new ArrayList<>();
+                for (String id : ids) {
+                    Command cmd = WeCommands.get(id);
+                    if (cmd != null) source.add(cmd);
+                }
+            }
+            case RECENT -> {
+                List<String> ids = CommandHistory.getRecent();
+                source = new ArrayList<>();
+                for (String id : ids) {
+                    Command cmd = WeCommands.get(id);
+                    if (cmd != null) source.add(cmd);
+                }
+            }
+            default -> {
+                Category category = parent.getSelectedCategory();
+                source = category == null
+                        ? new ArrayList<>(WeCommands.all())
+                        : new ArrayList<>(WeCommands.byCategory(category));
+            }
+        }
+
+        String query = parent.getSearchQuery();
         List<CommandRow> rows = new ArrayList<>();
-        for (int i = 0; i < commands.size(); i += 2) {
-            Command left = commands.get(i);
-            Command right = i + 1 < commands.size() ? commands.get(i + 1) : null;
-            rows.add(new CommandRow(left, right));
+        for (Command cmd : source) {
+            if (matches(cmd, query)) {
+                rows.add(new CommandRow(cmd));
+            }
         }
         return rows;
+    }
+
+    private boolean matches(Command cmd, String query) {
+        if (query.isBlank()) return true;
+        String q = query.toLowerCase(Locale.ROOT);
+        if (cmd.displayName().toLowerCase(Locale.ROOT).contains(q)) return true;
+        if (cmd.id().toLowerCase(Locale.ROOT).contains(q)) return true;
+        if (cmd.description().toLowerCase(Locale.ROOT).contains(q)) return true;
+        for (String alias : cmd.aliases()) {
+            if (alias.toLowerCase(Locale.ROOT).contains(q)) return true;
+        }
+        for (WeCommands.Usage usage : cmd.usages()) {
+            if (usage.displayTemplate().toLowerCase(Locale.ROOT).contains(q)) return true;
+            if (usage.description() != null && usage.description().toLowerCase(Locale.ROOT).contains(q)) return true;
+        }
+        return false;
     }
 
     @Override

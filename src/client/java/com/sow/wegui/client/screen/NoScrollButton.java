@@ -19,4 +19,8 @@ public class NoScrollButton extends ButtonGeneric {
     public boolean onMouseScrolledImpl(double mouseX, double mouseY, double scrollX, double scrollY) {
         return false;
     }
+
+    public void setVisiblePublic(boolean visible) {
+        this.visible = visible;
+    }
 }

@@ -56,6 +56,18 @@
   "wegui.config.mode_indicator.name.modeIndicatorScale": "Mode Indicator Scale",
   "wegui.config.mode_indicator.comment.modeIndicatorScale": "Resize the mode indicator as a percentage",
 
+  "wegui.config.tab.command_panel": "Command Panel",
+  "wegui.config.command_panel.name.commandPanelShowDescription": "Show Command Description",
+  "wegui.config.command_panel.comment.commandPanelShowDescription": "Show command templates and other descriptions in the command list",
+  "wegui.config.command_panel.name.commandPanelCompactMode": "Compact Mode",
+  "wegui.config.command_panel.comment.commandPanelCompactMode": "Reduce row height to show more commands",
+  "wegui.config.command_panel.name.commandPanelFavorites": "Favorite Commands",
+  "wegui.config.command_panel.comment.commandPanelFavorites": "Internal use, do not edit manually",
+  "wegui.config.command_panel.name.commandPanelRecentCommands": "Recent Commands",
+  "wegui.config.command_panel.comment.commandPanelRecentCommands": "Internal use, do not edit manually",
+  "wegui.config.command_panel.name.commandPanelMaxRecent": "Max Recent Count",
+  "wegui.config.command_panel.comment.commandPanelMaxRecent": "Maximum number of recent commands to keep",
+
   "wegui.config.hotkeys.name.openGui": "Open WE GUI Panel",
   "wegui.config.hotkeys.comment.openGui": "Open the WorldEdit command graphical panel",
 
@@ -70,9 +82,17 @@
   "wegui.command.category_label": "Category",
   "wegui.command.bind_wand": "Bind Held Item as Wand",
   "wegui.command.open_panel": "WE Panel",
+  "wegui.command.search_hint": "Search commands, aliases, templates...",
+  "wegui.command.favorites": "Favorites",
+  "wegui.command.recent": "Recent",
 
   "wegui.picker.title": "Select Item",
   "wegui.picker.button": "Pick",
+  "wegui.picker.search": "Search...",
+  "wegui.picker.no_results": "No matching results",
+  "wegui.picker.more_results": "%s more results not shown",
+
+  "wegui.param.invalid": "Parameter '%s' is invalid",
 
   "wegui.category.general": "General",
   "wegui.category.selection": "Selection",

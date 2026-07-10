@@ -1,15 +1,16 @@
 package com.sow.wegui.client.screen;
 
+import com.sow.wegui.client.CommandHistory;
 import com.sow.wegui.client.CommandSender;
 import com.sow.wegui.commands.WeCommands;
 import com.sow.wegui.commands.WeCommands.Category;
 import com.sow.wegui.commands.WeCommands.Command;
 import com.sow.wegui.config.Configs;
 import fi.dy.masa.malilib.gui.GuiListBase;
+import fi.dy.masa.malilib.gui.GuiTextFieldGeneric;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.interfaces.ISelectionListener;
-import fi.dy.masa.malilib.gui.widgets.WidgetDropDownList;
-import fi.dy.masa.malilib.interfaces.IStringRetriever;
+import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.util.StringUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -18,32 +19,53 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * 基于 malilib 的 WorldEdit 命令主面板。
- * 左侧分类栏，右侧两列命令网格。
+ * 左侧分类/收藏/最近使用栏，顶部搜索框，主区域命令卡片列表。
  */
 public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry, WidgetListCommands> implements ISelectionListener<CommandRow> {
     private static final int SIDE_BAR_WIDTH = 120;
-    private static final int TOP_BAR_HEIGHT = 38;
+    private static final int TOP_BAR_HEIGHT = 42;
     private static final int BOTTOM_BAR_HEIGHT = 32;
     private static final int PADDING = 10;
+    private static final int CATEGORY_ENTRY_HEIGHT = 24;
+    private static final int CATEGORY_SCROLLBAR_WIDTH = 6;
 
-    private CategoryEntry selectedCategory = new CategoryEntry(null, Component.translatable("wegui.command.category.all").getString());
-    private WidgetDropDownList<CategoryEntry> categoryDropdown;
+    private FilterEntry selectedFilter = new FilterEntry(FilterMode.ALL, null, StringUtils.translate("wegui.command.category.all"), 0);
+    private GuiTextFieldGeneric searchField;
+    private WidgetListCommands listWidget;
+    private final List<NoScrollButton> categoryButtons = new ArrayList<>();
+    private int categoryScrollOffset = 0;
+    private int categoryMaxScroll = 0;
+    private int categoryEntryCount = 0;
 
     public WeCommandScreen() {
         super(PADDING + SIDE_BAR_WIDTH, TOP_BAR_HEIGHT);
         this.setTitle(StringUtils.translate("wegui.command.title"));
     }
 
+    public FilterEntry getSelectedFilter() {
+        return selectedFilter;
+    }
+
+    public FilterMode getSelectedFilterMode() {
+        return selectedFilter.mode();
+    }
+
     public Category getSelectedCategory() {
-        return selectedCategory.category();
+        return selectedFilter.mode() == FilterMode.CATEGORY ? selectedFilter.category() : null;
+    }
+
+    public String getSearchQuery() {
+        return searchField == null ? "" : searchField.getValue().trim().toLowerCase(Locale.ROOT);
     }
 
     @Override
     public void onSelectionChange(CommandRow entry) {
-        // 命令通过内部按钮触发
+        // 命令通过卡片内部按钮触发
     }
 
     @Override
@@ -55,28 +77,169 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
     public void initGui() {
         super.initGui();
         addCategorySidebar();
+        addSearchBar();
         addBottomButtons();
+        this.listWidget = this.getListWidget();
+    }
+
+    private void addSearchBar() {
+        int x = PADDING + SIDE_BAR_WIDTH;
+        int y = 12;
+        int w = this.width - x - PADDING;
+        searchField = new GuiTextFieldGeneric(x, y, w, 18, this.font);
+        searchField.setMaxLength(128);
+        this.addTextField(searchField, (textField) -> {
+            refreshList();
+            updateCategoryButtons();
+            return true;
+        });
     }
 
     private void addCategorySidebar() {
         int x = PADDING;
-        int y = TOP_BAR_HEIGHT;
-        int w = SIDE_BAR_WIDTH - 10;
+        int w = SIDE_BAR_WIDTH - 14 - CATEGORY_SCROLLBAR_WIDTH;
 
-        this.addLabel(x, y, w, 12, 0xFFFFFFFF, Component.translatable("wegui.command.category_label").getString());
-        y += 14;
+        categoryButtons.clear();
+        List<FilterEntry> entries = buildFilterEntries();
+        this.categoryEntryCount = entries.size();
+        for (int i = 0; i < entries.size(); i++) {
+            FilterEntry entry = entries.get(i);
+            NoScrollButton btn = new NoScrollButton(x, TOP_BAR_HEIGHT + i * CATEGORY_ENTRY_HEIGHT, w, 20, entry.displayName() + " (" + entry.count() + ")");
+            btn.setEnabled(!entry.equals(selectedFilter));
+            categoryButtons.add(btn);
+            this.addButton(btn, (b, mouseButton) -> {
+                selectedFilter = entry;
+                updateCategoryButtons();
+                refreshList();
+            });
+        }
+        updateCategoryButtonPositions();
+    }
 
-        List<CategoryEntry> entries = new ArrayList<>();
-        entries.add(new CategoryEntry(null, Component.translatable("wegui.command.category.all").getString()));
-        for (Category category : Category.values()) {
-            if (WeCommands.byCategory(category).isEmpty()) continue;
-            entries.add(new CategoryEntry(category, Component.translatable(category.getTranslationKey()).getString()));
+    private void updateCategoryButtons() {
+        List<FilterEntry> entries = buildFilterEntries();
+        this.categoryEntryCount = entries.size();
+        int selectedIndex = -1;
+        for (int i = 0; i < categoryButtons.size(); i++) {
+            NoScrollButton btn = categoryButtons.get(i);
+            if (i >= entries.size()) {
+                btn.setVisiblePublic(false);
+                continue;
+            }
+            FilterEntry entry = entries.get(i);
+            btn.setDisplayString(entry.displayName() + " (" + entry.count() + ")");
+            btn.setEnabled(!entry.equals(selectedFilter));
+            if (entry.equals(selectedFilter)) {
+                selectedIndex = i;
+            }
+        }
+        updateCategoryButtonPositions();
+        if (selectedIndex >= 0) {
+            ensureCategoryVisible(selectedIndex);
+        }
+    }
+
+    private void updateCategoryButtonPositions() {
+        int visibleTop = TOP_BAR_HEIGHT;
+        int visibleBottom = this.height - BOTTOM_BAR_HEIGHT;
+        int availableHeight = visibleBottom - visibleTop;
+        int totalHeight = this.categoryEntryCount * CATEGORY_ENTRY_HEIGHT;
+        int rawMaxScroll = Math.max(0, totalHeight - availableHeight);
+
+        categoryMaxScroll = roundUpToMultiple(rawMaxScroll, CATEGORY_ENTRY_HEIGHT);
+        categoryScrollOffset = roundDownToMultiple(
+                Math.max(0, Math.min(categoryScrollOffset, categoryMaxScroll)),
+                CATEGORY_ENTRY_HEIGHT);
+
+        for (int i = 0; i < categoryButtons.size(); i++) {
+            NoScrollButton btn = categoryButtons.get(i);
+            int y = TOP_BAR_HEIGHT + i * CATEGORY_ENTRY_HEIGHT - categoryScrollOffset;
+            btn.setY(y);
+            btn.setVisiblePublic(y >= visibleTop && y + btn.getHeight() <= visibleBottom);
+        }
+    }
+
+    private static int roundUpToMultiple(int value, int multiple) {
+        if (value <= 0) return 0;
+        return ((value + multiple - 1) / multiple) * multiple;
+    }
+
+    private static int roundDownToMultiple(int value, int multiple) {
+        if (value <= 0) return 0;
+        return (value / multiple) * multiple;
+    }
+
+    private void ensureCategoryVisible(int index) {
+        updateCategoryButtonPositions();
+        if (categoryMaxScroll <= 0) {
+            categoryScrollOffset = 0;
+            updateCategoryButtonPositions();
+            return;
         }
 
-        IStringRetriever<CategoryEntry> retriever = CategoryEntry::displayName;
-        categoryDropdown = new WidgetDropDownList<>(x, y, w, 18, 160, 12, entries, retriever);
-        categoryDropdown.setSelectedEntry(selectedCategory);
-        this.addWidget(categoryDropdown);
+        int visibleTop = TOP_BAR_HEIGHT;
+        int visibleBottom = this.height - BOTTOM_BAR_HEIGHT;
+        int availableHeight = visibleBottom - visibleTop;
+
+        int entryTop = index * CATEGORY_ENTRY_HEIGHT;
+        int entryBottom = entryTop + CATEGORY_ENTRY_HEIGHT;
+
+        if (entryTop < categoryScrollOffset) {
+            categoryScrollOffset = roundDownToMultiple(entryTop, CATEGORY_ENTRY_HEIGHT);
+        } else if (entryBottom > categoryScrollOffset + availableHeight) {
+            int needed = entryBottom - availableHeight;
+            categoryScrollOffset = roundUpToMultiple(needed, CATEGORY_ENTRY_HEIGHT);
+        }
+        categoryScrollOffset = Math.max(0, Math.min(categoryScrollOffset, categoryMaxScroll));
+        updateCategoryButtonPositions();
+    }
+
+    private List<FilterEntry> buildFilterEntries() {
+        List<FilterEntry> entries = new ArrayList<>();
+        WeCommands.init();
+
+        String query = getSearchQuery();
+
+        // 将收藏和最近使用放到顶部
+        entries.add(new FilterEntry(FilterMode.FAVORITES, null,
+                StringUtils.translate("wegui.command.favorites"), CommandHistory.getFavorites().size()));
+        entries.add(new FilterEntry(FilterMode.RECENT, null,
+                StringUtils.translate("wegui.command.recent"), CommandHistory.getRecent().size()));
+
+        int allCount = 0;
+        for (Command cmd : WeCommands.all()) {
+            if (matches(cmd, query)) allCount++;
+        }
+        entries.add(new FilterEntry(FilterMode.ALL, null, StringUtils.translate("wegui.command.category.all"), allCount));
+
+        for (Category category : Category.values()) {
+            List<Command> cmds = WeCommands.byCategory(category);
+            if (cmds.isEmpty()) continue;
+            int count = 0;
+            for (Command cmd : cmds) {
+                if (matches(cmd, query)) count++;
+            }
+            entries.add(new FilterEntry(FilterMode.CATEGORY, category,
+                    Component.translatable(category.getTranslationKey()).getString(), count));
+        }
+
+        return entries;
+    }
+
+    private boolean matches(Command cmd, String query) {
+        if (query.isBlank()) return true;
+        String q = query.toLowerCase(Locale.ROOT);
+        if (cmd.displayName().toLowerCase(Locale.ROOT).contains(q)) return true;
+        if (cmd.id().toLowerCase(Locale.ROOT).contains(q)) return true;
+        if (cmd.description().toLowerCase(Locale.ROOT).contains(q)) return true;
+        for (String alias : cmd.aliases()) {
+            if (alias.toLowerCase(Locale.ROOT).contains(q)) return true;
+        }
+        for (WeCommands.Usage usage : cmd.usages()) {
+            if (usage.displayTemplate().toLowerCase(Locale.ROOT).contains(q)) return true;
+            if (usage.description() != null && usage.description().toLowerCase(Locale.ROOT).contains(q)) return true;
+        }
+        return false;
     }
 
     private void addBottomButtons() {
@@ -100,18 +263,89 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
         CommandSender.send("/tool selwand");
     }
 
-    @Override
-    public void render(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        super.render(g, mouseX, mouseY, partialTick);
-
-        if (categoryDropdown != null) {
-            CategoryEntry current = categoryDropdown.getSelectedEntry();
-            if (current != null && !current.equals(selectedCategory)) {
-                this.selectedCategory = current;
-                this.getListWidget().refreshEntries();
-                this.getListWidget().resetScrollbarPosition();
-            }
+    public void refreshList() {
+        if (listWidget != null) {
+            listWidget.refreshEntries();
+            listWidget.resetScrollbarPosition();
         }
+    }
+
+    public void onFavoriteChanged() {
+        updateCategoryButtons();
+        refreshList();
+    }
+
+    @Override
+    public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTick) {
+        this.drawSearchBackground(ctx);
+        this.drawSearchHint(ctx);
+        if (this.getListWidget() != null) {
+            super.drawContents(ctx, mouseX, mouseY, partialTick);
+        }
+        this.drawCategoryScrollbar(ctx);
+    }
+
+    @Override
+    public void drawScreenBackground(GuiContext ctx, int mouseX, int mouseY) {
+        super.drawScreenBackground(ctx, mouseX, mouseY);
+        this.drawCategoryBackground(ctx);
+    }
+
+    private void drawSearchBackground(GuiContext ctx) {
+        if (searchField == null) return;
+        int x = PADDING + SIDE_BAR_WIDTH;
+        int y = 12;
+        int w = this.width - x - PADDING;
+        ctx.fill(x - 1, y - 1, x + w + 1, y + 19, 0xFF000000);
+    }
+
+    private void drawSearchHint(GuiContext ctx) {
+        if (searchField == null) return;
+        if (!searchField.getValue().isEmpty() || searchField.isFocused()) return;
+        int x = PADDING + SIDE_BAR_WIDTH + 4;
+        int y = 12 + (18 - this.font.lineHeight) / 2 + 1;
+        ctx.drawString(this.font, StringUtils.translate("wegui.command.search_hint"), x, y, 0xFF888888, false);
+    }
+
+    private void drawCategoryBackground(GuiContext ctx) {
+        int x = PADDING;
+        int y = TOP_BAR_HEIGHT;
+        int width = SIDE_BAR_WIDTH - 10;
+        int height = this.height - TOP_BAR_HEIGHT - BOTTOM_BAR_HEIGHT;
+        ctx.fill(x, y, x + width, y + height, 0x90000000);
+    }
+
+    private void drawCategoryScrollbar(GuiContext ctx) {
+        if (categoryMaxScroll <= 0) {
+            return;
+        }
+
+        int visibleTop = TOP_BAR_HEIGHT;
+        int visibleBottom = this.height - BOTTOM_BAR_HEIGHT;
+        int availableHeight = visibleBottom - visibleTop;
+        int totalHeight = categoryButtons.size() * CATEGORY_ENTRY_HEIGHT;
+
+        int trackX = PADDING + SIDE_BAR_WIDTH - CATEGORY_SCROLLBAR_WIDTH - 2;
+        int trackY = visibleTop;
+
+        ctx.fill(trackX, trackY, trackX + CATEGORY_SCROLLBAR_WIDTH, trackY + availableHeight, 0xFF333333);
+
+        int thumbH = Math.max(20, availableHeight * availableHeight / totalHeight);
+        int thumbY = trackY + categoryScrollOffset * (availableHeight - thumbH) / categoryMaxScroll;
+        ctx.fill(trackX, thumbY, trackX + CATEGORY_SCROLLBAR_WIDTH, thumbY + thumbH, 0xFF888888);
+    }
+
+    @Override
+    public boolean onMouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        int visibleTop = TOP_BAR_HEIGHT;
+        int visibleBottom = this.height - BOTTOM_BAR_HEIGHT;
+        if (mouseX >= PADDING && mouseX < PADDING + SIDE_BAR_WIDTH &&
+            mouseY >= visibleTop && mouseY < visibleBottom) {
+            categoryScrollOffset -= (int) verticalAmount * CATEGORY_ENTRY_HEIGHT;
+            updateCategoryButtonPositions();
+            return true;
+        }
+        return super.onMouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     @Override
@@ -137,5 +371,26 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
     @Override
     protected int getListY() {
         return TOP_BAR_HEIGHT;
+    }
+
+    public record FilterEntry(FilterMode mode, Category category, String displayName, int count) {
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (!(obj instanceof FilterEntry other)) return false;
+            return mode == other.mode && category == other.category;
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Objects.hash(mode, category);
+        }
+    }
+
+    public enum FilterMode {
+        ALL,
+        CATEGORY,
+        FAVORITES,
+        RECENT
     }
 }

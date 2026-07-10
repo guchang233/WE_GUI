@@ -14,7 +14,9 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.Block;
 
 /**
  * WorldEdit 命令定义与注册表。
@@ -29,6 +31,28 @@ public final class WeCommands {
     private static Category currentCategory;
     private static List<Option> BIOME_OPTIONS;
     private static List<Option> ENTITY_TYPE_OPTIONS;
+    private static List<Option> BLOCK_OPTIONS;
+    private static List<Option> ITEM_OPTIONS;
+
+    public static List<Option> biomeOptions() {
+        initBiomeOptions();
+        return BIOME_OPTIONS;
+    }
+
+    public static List<Option> entityTypeOptions() {
+        initEntityTypeOptions();
+        return ENTITY_TYPE_OPTIONS;
+    }
+
+    public static List<Option> blockOptions() {
+        initBlockOptions();
+        return BLOCK_OPTIONS;
+    }
+
+    public static List<Option> itemOptions() {
+        initItemOptions();
+        return ITEM_OPTIONS;
+    }
 
     public static void init() {
         if (initialized) return;
@@ -36,6 +60,8 @@ public final class WeCommands {
 
         initBiomeOptions();
         initEntityTypeOptions();
+        initBlockOptions();
+        initItemOptions();
 
         registerGeneral();
         registerSelection();
@@ -128,13 +154,42 @@ public final class WeCommands {
         }
     }
 
+    /**
+     * 参数控件显示偏好。
+     */
+    public enum ParamControlType {
+        DEFAULT,
+        BUTTON_ROW,
+        SEARCHABLE_DROPDOWN,
+        NUMBER_SPINNER
+    }
+
+    /**
+     * 参数额外元数据：建议、校验、控件偏好。
+     */
+    public record ParamMeta(
+            boolean supportsSuggestions,
+            String validatorRegex,
+            int min,
+            int max,
+            ParamControlType controlType
+    ) {
+        public static final ParamMeta DEFAULT = new ParamMeta(false, null, Integer.MIN_VALUE, Integer.MAX_VALUE, ParamControlType.DEFAULT);
+    }
+
     public record Command(
             String id,
             String displayName,
             String description,
             Category category,
-            List<Usage> usages
-    ) {}
+            List<Usage> usages,
+            String[] aliases,
+            String icon
+    ) {
+        public Command(String id, String displayName, String description, Category category, List<Usage> usages) {
+            this(id, displayName, description, category, usages, new String[0], null);
+        }
+    }
 
     public record Usage(
             String id,
@@ -163,34 +218,47 @@ public final class WeCommands {
             String defaultValue,
             String hint,
             String description,
-            List<Option> options
+            List<Option> options,
+            ParamMeta meta
     ) {
         public Param(String name, ParamType paramType, String defaultValue) {
-            this(name, paramType, false, defaultValue, null, "", List.of());
+            this(name, paramType, false, defaultValue, null, "", List.of(), ParamMeta.DEFAULT);
         }
 
         public Param(String name, ParamType paramType, String defaultValue, String description) {
-            this(name, paramType, false, defaultValue, null, description, List.of());
+            this(name, paramType, false, defaultValue, null, description, List.of(), ParamMeta.DEFAULT);
         }
 
         public Param(String name, ParamType paramType, String defaultValue, boolean optional, String description) {
-            this(name, paramType, optional, defaultValue, null, description, List.of());
+            this(name, paramType, optional, defaultValue, null, description, List.of(), ParamMeta.DEFAULT);
         }
 
         public Param(String name, ParamType paramType, List<Option> options, String defaultValue, boolean optional) {
-            this(name, paramType, optional, defaultValue, null, "", List.copyOf(options));
+            this(name, paramType, optional, defaultValue, null, "", List.copyOf(options), ParamMeta.DEFAULT);
         }
 
         public Param(String name, ParamType paramType, boolean optional, String defaultValue, String hint) {
-            this(name, paramType, optional, defaultValue, hint, "", List.of());
+            this(name, paramType, optional, defaultValue, hint, "", List.of(), ParamMeta.DEFAULT);
         }
 
         public Param(String name, ParamType paramType, String defaultValue, boolean optional) {
-            this(name, paramType, optional, defaultValue, null, "", List.of());
+            this(name, paramType, optional, defaultValue, null, "", List.of(), ParamMeta.DEFAULT);
         }
 
         public Param(String name, ParamType paramType, String defaultValue, String hint, boolean optional) {
-            this(name, paramType, optional, defaultValue, hint, "", List.of());
+            this(name, paramType, optional, defaultValue, hint, "", List.of(), ParamMeta.DEFAULT);
+        }
+
+        public Param(String name, ParamType paramType, List<Option> options, String defaultValue, boolean optional, ParamMeta meta) {
+            this(name, paramType, optional, defaultValue, null, "", List.copyOf(options), meta);
+        }
+
+        public Param(String name, ParamType paramType, String defaultValue, String description, ParamMeta meta) {
+            this(name, paramType, false, defaultValue, null, description, List.of(), meta);
+        }
+
+        public Param withMeta(ParamMeta meta) {
+            return new Param(name, paramType, optional, defaultValue, hint, description, options, meta);
         }
 
         public String valueOfLabel(String label) {
@@ -211,7 +279,11 @@ public final class WeCommands {
     // ==================== 注册辅助 ====================
 
     private static void register(String id, String displayName, String description, Usage... usages) {
-        Command cmd = new Command(id, displayName, description, currentCategory, List.of(usages));
+        register(id, displayName, description, new String[0], null, usages);
+    }
+
+    private static void register(String id, String displayName, String description, String[] aliases, String icon, Usage... usages) {
+        Command cmd = new Command(id, displayName, description, currentCategory, List.of(usages), aliases == null ? new String[0] : aliases, icon);
         BY_ID.put(id, cmd);
         BY_CATEGORY.computeIfAbsent(currentCategory, k -> new ArrayList<>()).add(cmd);
     }
@@ -382,12 +454,56 @@ public final class WeCommands {
         ENTITY_TYPE_OPTIONS = list;
     }
 
+    private static void initBlockOptions() {
+        if (BLOCK_OPTIONS != null) return;
+
+        List<Option> list = new ArrayList<>();
+        try {
+            for (Block block : BuiltInRegistries.BLOCK) {
+                String id = BuiltInRegistries.BLOCK.getKey(block).toString();
+                list.add(new Option(id, id, id));
+            }
+        } catch (Throwable ignored) {
+            // 注册表尚未准备好时回退到空列表
+        }
+        list.sort(Comparator.comparing(Option::label));
+        BLOCK_OPTIONS = list;
+    }
+
+    private static void initItemOptions() {
+        if (ITEM_OPTIONS != null) return;
+
+        List<Option> list = new ArrayList<>();
+        try {
+            for (Item item : BuiltInRegistries.ITEM) {
+                String id = BuiltInRegistries.ITEM.getKey(item).toString();
+                list.add(new Option(id, id, id));
+            }
+        } catch (Throwable ignored) {
+            // 注册表尚未准备好时回退到空列表
+        }
+        list.sort(Comparator.comparing(Option::label));
+        ITEM_OPTIONS = list;
+    }
+
     private static Param biomeParam(String name, String defaultValue, boolean optional) {
-        return new Param(name, ParamType.ENUM, BIOME_OPTIONS, defaultValue, optional);
+        return new Param(name, ParamType.ENUM, BIOME_OPTIONS, defaultValue, optional,
+                new ParamMeta(true, null, Integer.MIN_VALUE, Integer.MAX_VALUE, ParamControlType.SEARCHABLE_DROPDOWN));
     }
 
     private static Param entityTypeParam(String name, String defaultValue, boolean optional) {
-        return new Param(name, ParamType.ENUM, ENTITY_TYPE_OPTIONS, defaultValue, optional);
+        return new Param(name, ParamType.ENUM, ENTITY_TYPE_OPTIONS, defaultValue, optional,
+                new ParamMeta(true, null, Integer.MIN_VALUE, Integer.MAX_VALUE, ParamControlType.SEARCHABLE_DROPDOWN));
+    }
+
+    private static Param blockParam(String name, String defaultValue, boolean optional) {
+        return new Param(name, ParamType.ENUM, BLOCK_OPTIONS, defaultValue, optional,
+                new ParamMeta(true, null, Integer.MIN_VALUE, Integer.MAX_VALUE, ParamControlType.SEARCHABLE_DROPDOWN));
+    }
+
+    private static Param itemParam(String name, String defaultValue, boolean optional) {
+        return new Param(name, ParamType.ENUM, ITEM_OPTIONS, defaultValue, optional,
+                new ParamMeta(true, null, Integer.MIN_VALUE, Integer.MAX_VALUE, ParamControlType.SEARCHABLE_DROPDOWN));
     }
 
     private static void registerGeneral() {
@@ -469,10 +585,22 @@ public final class WeCommands {
         register("smooth", "平滑", "平滑地形", param("smooth", "//smooth", "//smooth [迭代次数]", "平滑地形", ITERATIONS));
         register("naturalize", "自然化", "将石头与泥土自然过渡", instant("naturalize", "//naturalize", "自然化地形"));
         register("move", "移动", "移动选区内容",
-                param("move", "//move", "//move [数量] [方向] [图案|-s]", "移动选区内容", AMOUNT, DIRECTION, new Param("-s 保留源区", ParamType.FLAG, "-s", true)));
+                param("move", "//move", "//move [数量] [方向] [-sbea] [图案]", "移动选区内容",
+                        AMOUNT, DIRECTION,
+                        new Param("-s 选择新区域", ParamType.FLAG, "-s", true),
+                        new Param("-b 复制空气", ParamType.FLAG, "-b", true),
+                        new Param("-e 移动实体", ParamType.FLAG, "-e", true),
+                        new Param("-a 忽略空气", ParamType.FLAG, "-a", true),
+                        new Param("填充图案", ParamType.PATTERN, "air", true)));
         register("stack", "堆叠", "沿方向重复堆叠选区",
-                param("stack", "//stack", "//stack [次数] [方向] [-abers] [-m <掩码>]", "堆叠选区", COUNT, DIRECTION,
-                        new Param("-s 选择新区域", ParamType.FLAG, "-s", true)));
+                param("stack", "//stack", "//stack [次数] [方向] [-abers] [-m <掩码>]", "堆叠选区",
+                        COUNT, DIRECTION,
+                        new Param("-a 忽略空气", ParamType.FLAG, "-a", true),
+                        new Param("-b 复制空气", ParamType.FLAG, "-b", true),
+                        new Param("-e 复制实体", ParamType.FLAG, "-e", true),
+                        new Param("-r 不复制空气", ParamType.FLAG, "-r", true),
+                        new Param("-s 选择新区域", ParamType.FLAG, "-s", true),
+                        new Param("-m 掩码", ParamType.MASK, "", true)));
         register("regen", "重新生成", "按当前种子重新生成选区", instant("regen", "//regen", "重新生成选区"));
         register("deform", "变形", "按表达式变形选区", param("deform", "//deform", "//deform <表达式>", "按表达式变形", EXPRESSION));
         register("hollow", "镂空", "将选区内部挖空只留外壳",
