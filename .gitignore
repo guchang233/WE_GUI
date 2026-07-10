@@ -10,6 +10,7 @@ run/
 *.ipr
 *.iws
 .vscode/
+.trae/
 *.code-workspace
 .project
 .classpath
