@@ -9,6 +9,7 @@
     "homepage": "https://github.com/guchang233/WE_GUI/"
   },
   "license": "MIT",
+  "icon": "assets/wegui/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": ["com.sow.wegui.WeGuiMod"],
