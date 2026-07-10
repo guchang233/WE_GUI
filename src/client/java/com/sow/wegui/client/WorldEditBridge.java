@@ -3,13 +3,18 @@ package com.sow.wegui.client;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.WorldEdit;
+import com.sk89q.worldedit.command.tool.InvalidToolBindException;
+import com.sk89q.worldedit.command.tool.SelectionWand;
 import com.sk89q.worldedit.extension.platform.Capability;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.regions.CuboidRegion;
 import com.sk89q.worldedit.regions.Region;
+import com.sk89q.worldedit.regions.RegionSelector;
+import com.sk89q.worldedit.regions.selector.CuboidRegionSelector;
 import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldedit.world.block.BaseBlock;
+import com.sk89q.worldedit.world.item.ItemType;
 import com.sk89q.worldedit.extent.transform.BlockTransformExtent;
 import com.sow.wegui.WeGuiMod;
 import com.sow.wegui.WeStatus;
@@ -141,21 +146,25 @@ public final class WorldEditBridge {
             for (int x = min.x(); x <= max.x(); x++) {
                 for (int y = min.y(); y <= max.y(); y++) {
                     for (int z = min.z(); z <= max.z(); z++) {
-                        BlockVector3 pos = BlockVector3.at(x, y, z);
-                        BaseBlock base = clipboard.getFullBlock(pos);
-                        if (base.getBlockType().id().equals("minecraft:air")) continue;
+                        try {
+                            BlockVector3 pos = BlockVector3.at(x, y, z);
+                            BaseBlock base = clipboard.getFullBlock(pos);
+                            if (base.getBlockType().id().equals("minecraft:air")) continue;
 
-                        // 应用 //flip、//rotate 等变换到方块状态（朝向、半砖上下等）
-                        // 使用 WorldEdit 内部 paste 时相同的 BlockTransformExtent，确保与 //paste 结果一致
-                        BaseBlock transformedBase = BlockTransformExtent.transform(base, transform);
-                        BlockState state = convertToMcState(transformedBase.toImmutableState());
-                        if (state == null || state.isAir()) continue;
+                            // 应用 //flip、//rotate 等变换到方块状态（朝向、半砖上下等）
+                            // 使用 WorldEdit 内部 paste 时相同的 BlockTransformExtent，确保与 //paste 结果一致
+                            BaseBlock transformedBase = BlockTransformExtent.transform(base, transform);
+                            BlockState state = convertToMcState(transformedBase.toImmutableState());
+                            if (state == null || state.isAir()) continue;
 
-                        // 应用变换到位置（绕剪贴板 origin）
-                        BlockVector3 local = pos.subtract(origin);
-                        BlockVector3 transformed = transform.apply(local.toVector3()).toBlockPoint();
-                        BlockPos target = new BlockPos(transformed.x(), transformed.y(), transformed.z());
-                        result.put(target, state);
+                            // 应用变换到位置（绕剪贴板 origin）
+                            BlockVector3 local = pos.subtract(origin);
+                            BlockVector3 transformed = transform.apply(local.toVector3()).toBlockPoint();
+                            BlockPos target = new BlockPos(transformed.x(), transformed.y(), transformed.z());
+                            result.put(target, state);
+                        } catch (Throwable e) {
+                            WeGuiMod.LOGGER.debug("跳过无法转换的剪贴板方块: {}", e.toString());
+                        }
                     }
                 }
             }
@@ -204,5 +213,93 @@ public final class WorldEditBridge {
     }
 
     public record CornerPositions(BlockPos pos1, BlockPos pos2) {
+    }
+
+    /**
+     * 获取 WorldEdit 选区中已经设置过的角点，允许只设置了一个点。
+     * 仅对 CuboidRegionSelector 有效；pos2 可能为 null。
+     */
+    @Nullable
+    public static PartialCornerPositions getPartialSelectionCorners(Minecraft mc) {
+        if (mc.player == null) return null;
+        LocalSession session = WorldEditAdapter.session(mc.player);
+        if (session == null) return null;
+        try {
+            com.sk89q.worldedit.world.World weWorld = session.getSelectionWorld();
+            if (weWorld == null) return null;
+            RegionSelector selector = session.getRegionSelector(weWorld);
+            if (!(selector instanceof CuboidRegionSelector cuboidSelector)) return null;
+
+            BlockVector3 p1 = cuboidSelector.getPrimaryPosition();
+            BlockVector3 p2 = getSelectorField(cuboidSelector, "position2");
+            return new PartialCornerPositions(
+                    p1 == null ? null : new BlockPos(p1.x(), p1.y(), p1.z()),
+                    p2 == null ? null : new BlockPos(p2.x(), p2.y(), p2.z()));
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private static BlockVector3 getSelectorField(CuboidRegionSelector selector, String name) {
+        try {
+            java.lang.reflect.Field field = CuboidRegionSelector.class.getDeclaredField(name);
+            field.setAccessible(true);
+            return (BlockVector3) field.get(selector);
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    public record PartialCornerPositions(@Nullable BlockPos pos1, @Nullable BlockPos pos2) {
+    }
+
+    /**
+     * 读取 WorldEdit 当前的默认选区魔杖物品 ID。
+     */
+    public static String getWandItem() {
+        try {
+            String itemId = WorldEdit.getInstance().getConfiguration().wandItem;
+            return itemId == null ? "" : itemId;
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.debug("读取 WorldEdit wandItem 失败: {}", e.toString());
+            return "";
+        }
+    }
+
+    /**
+     * 同步设置 WorldEdit 的默认选区魔杖物品 ID。
+     * 这样修改本模组的 wandItem 配置时，WorldEdit 也会真正识别新工具。
+     */
+    public static void setWandItem(String itemId) {
+        try {
+            WorldEdit.getInstance().getConfiguration().wandItem = itemId;
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.debug("设置 WorldEdit wandItem 失败: {}", e.toString());
+        }
+    }
+
+    /**
+     * 将指定物品 ID 注册为当前玩家的选区魔杖工具。
+     * 只有调用 LocalSession.setTool 后，WorldEdit 才会在玩家手持该物品时响应左右键。
+     */
+    public static void bindWandItem(String itemId) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
+        LocalSession session = WorldEditAdapter.session(mc.player);
+        if (session == null) return;
+
+        try {
+            ItemType itemType = ItemType.REGISTRY.get(itemId);
+            if (itemType == null) {
+                WeGuiMod.LOGGER.debug("无法解析为 WorldEdit ItemType: {}", itemId);
+                return;
+            }
+            session.setTool(itemType, new SelectionWand());
+        } catch (InvalidToolBindException e) {
+            WeGuiMod.LOGGER.debug("绑定选区魔杖失败: {}", e.toString());
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.debug("绑定选区魔杖时出错: {}", e.toString());
+        }
     }
 }

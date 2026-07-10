@@ -2,7 +2,7 @@ package com.sow.wegui.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.sow.wegui.config.Config;
+import com.sow.wegui.config.Configs;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.Minecraft;
@@ -37,7 +37,6 @@ public final class PastePreviewRenderer {
     private static long cacheTick = -CLIPBOARD_CACHE_TICKS;
 
     public static void register() {
-        // BEFORE_TRANSLUCENT 每帧都会触发，不需要玩家指着方块
         WorldRenderEvents.BEFORE_TRANSLUCENT.register(context -> render(context));
     }
 
@@ -50,6 +49,14 @@ public final class PastePreviewRenderer {
     }
 
     private static void render(WorldRenderContext context) {
+        try {
+            renderInternal(context);
+        } catch (Throwable e) {
+            com.sow.wegui.WeGuiMod.LOGGER.debug("WorldEdit GUI 渲染预览时出错: {}", e.toString());
+        }
+    }
+
+    private static void renderInternal(WorldRenderContext context) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
 
@@ -62,27 +69,39 @@ public final class PastePreviewRenderer {
         Matrix4f matrix = pose.last().pose();
 
         // 1) 当前 WorldEdit 选区
-        if (Config.get().isSelectionBoundsEnabled()) {
-            WorldEditBridge.Bounds sel = WorldEditBridge.getSelectionBounds(mc);
-            WorldEditBridge.CornerPositions corners = WorldEditBridge.getSelectionCorners(mc);
-            if (sel != null) {
-                AABB selectionBox = new AABB(sel.minX(), sel.minY(), sel.minZ(),
-                        sel.minX() + sel.w(), sel.minY() + sel.h(), sel.minZ() + sel.l());
-                float[] c = argb(Config.get().getSelectionBoxColor());
-                drawBox(buffer, matrix, selectionBox, c[0], c[1], c[2], c[3]);
-
-                // 为第一、二选点单独渲染小框架（投影同款）
-                if (corners != null) {
-                    float[] c1 = argb(Config.get().getSelectionPos1Color());
-                    float[] c2 = argb(Config.get().getSelectionPos2Color());
-                    drawCornerBox(buffer, matrix, corners.pos1(), c1[0], c1[1], c1[2], c1[3]);
-                    drawCornerBox(buffer, matrix, corners.pos2(), c2[0], c2[1], c2[2], c2[3]);
+        if (Configs.Generic.SELECTION_BOUNDS_ENABLED.getBooleanValue()) {
+            try {
+                WorldEditBridge.Bounds sel = WorldEditBridge.getSelectionBounds(mc);
+                if (sel != null) {
+                    AABB selectionBox = new AABB(sel.minX(), sel.minY(), sel.minZ(),
+                            sel.minX() + sel.w(), sel.minY() + sel.h(), sel.minZ() + sel.l());
+                    var c = Configs.PastePreview.SELECTION_BOX_COLOR.getColor();
+                    drawBox(buffer, matrix, selectionBox, c.r, c.g, c.b, c.a);
                 }
+            } catch (Throwable e) {
+                com.sow.wegui.WeGuiMod.LOGGER.debug("渲染选区大框时出错: {}", e.toString());
+            }
+
+            // 为第一、二选点单独渲染角点框（略大于 1x1x1，蓝色比红色略大，均在方块外侧）
+            try {
+                WorldEditBridge.PartialCornerPositions partial = WorldEditBridge.getPartialSelectionCorners(mc);
+                if (partial != null) {
+                    if (partial.pos1() != null) {
+                        var c1 = Configs.PastePreview.SELECTION_POS1_COLOR.getColor();
+                        drawCornerBox(buffer, matrix, partial.pos1(), 1.05f, c1.r, c1.g, c1.b, c1.a);
+                    }
+                    if (partial.pos2() != null) {
+                        var c2 = Configs.PastePreview.SELECTION_POS2_COLOR.getColor();
+                        drawCornerBox(buffer, matrix, partial.pos2(), 1.10f, c2.r, c2.g, c2.b, c2.a);
+                    }
+                }
+            } catch (Throwable e) {
+                com.sow.wegui.WeGuiMod.LOGGER.debug("渲染选点角框时出错: {}", e.toString());
             }
         }
 
         // 2) copy 后的粘贴预览
-        if (Config.get().isPastePreviewEnabled()) {
+        if (Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) {
             Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc);
             if (blocks != null && !blocks.isEmpty()) {
                 BlockPos playerPos = BlockPos.containing(mc.player.getX(), mc.player.getY(), mc.player.getZ());
@@ -93,9 +112,9 @@ public final class PastePreviewRenderer {
                 renderGhostBlocks(mc, pose, context.consumers(), blocks, playerPos);
 
                 // 4) 每个非空气方块单独边框（投影同款）
-                if (Config.get().isBlockOutlineEnabled()) {
-                    float[] c = argb(Config.get().getBlockOutlineColor());
-                    renderBlockOutlines(buffer, matrix, blocks, playerPos, c[0], c[1], c[2], c[3]);
+                if (Configs.Generic.BLOCK_OUTLINE_ENABLED.getBooleanValue()) {
+                    var c = Configs.PastePreview.BLOCK_OUTLINE_COLOR.getColor();
+                    renderBlockOutlines(buffer, matrix, blocks, playerPos, c.r, c.g, c.b, c.a);
                 }
             }
         }
@@ -138,33 +157,24 @@ public final class PastePreviewRenderer {
         BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
         AlphaMultiBufferSource alphaSource = new AlphaMultiBufferSource(bufferSource, GHOST_ALPHA);
         for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
-            BlockPos target = origin.offset(entry.getKey());
-            BlockState state = entry.getValue();
-            pose.pushPose();
-            pose.translate(target.getX(), target.getY(), target.getZ());
-            dispatcher.renderSingleBlock(state, pose, alphaSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
-            pose.popPose();
+            try {
+                BlockPos target = origin.offset(entry.getKey());
+                BlockState state = entry.getValue();
+                pose.pushPose();
+                pose.translate(target.getX(), target.getY(), target.getZ());
+                dispatcher.renderSingleBlock(state, pose, alphaSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+                pose.popPose();
+            } catch (Throwable e) {
+                com.sow.wegui.WeGuiMod.LOGGER.debug("跳过无法渲染的预览方块: {}", e.toString());
+            }
         }
     }
 
-    private static float[] argb(int color) {
-        return new float[] {
-                ((color >> 16) & 0xFF) / 255f,
-                ((color >> 8) & 0xFF) / 255f,
-                (color & 0xFF) / 255f,
-                ((color >> 24) & 0xFF) / 255f
-        };
-    }
-
-    private static void drawCornerBox(VertexConsumer buffer, Matrix4f matrix, BlockPos pos,
+    private static void drawCornerBox(VertexConsumer buffer, Matrix4f matrix, BlockPos pos, float scale,
                                       float r, float g, float b, float a) {
-        float minX = pos.getX() - 0.125f;
-        float minY = pos.getY() - 0.125f;
-        float minZ = pos.getZ() - 0.125f;
-        float maxX = pos.getX() + 1.125f;
-        float maxY = pos.getY() + 1.125f;
-        float maxZ = pos.getZ() + 1.125f;
-        drawBox(buffer, matrix, new AABB(minX, minY, minZ, maxX, maxY, maxZ), r, g, b, a);
+        float inset = (scale - 1.0f) / 2.0f;
+        drawBox(buffer, matrix, new AABB(pos.getX() - inset, pos.getY() - inset, pos.getZ() - inset,
+                pos.getX() + 1 + inset, pos.getY() + 1 + inset, pos.getZ() + 1 + inset), r, g, b, a);
     }
 
     private static void renderBlockOutlines(VertexConsumer buffer, Matrix4f matrix,

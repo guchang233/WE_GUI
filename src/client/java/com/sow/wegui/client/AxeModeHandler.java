@@ -1,180 +1,215 @@
 package com.sow.wegui.client;
 
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import com.sow.wegui.config.Configs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.phys.AABB;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * 小木斧双模式控制：
+ * WE 绑定工具双模式控制：
  * - 正常模式：保持 WorldEdit 默认行为（左键 pos1，右键 pos2）。
- * - 编辑选区模式：按住 Alt 并滚动滚轮，可向玩家朝向方向挪动选区角点；
- *   若准星未指向任何角点，则整体平移选区。
+ * - 编辑选区模式：按住 Alt 并滚动滚轮，可向玩家朝向方向挪动上一次修改的选点。
+ *
+ * 模式切换：手持配置的工具时按住 Ctrl 并滚动滚轮循环切换所有模式。
+ * 手持配置的工具时只要按下了 Ctrl 或 Alt，滚轮事件都会被消费，避免触发物品栏切换。
  */
 public final class AxeModeHandler {
     private AxeModeHandler() {}
 
     public enum AxeMode {
-        NORMAL("正常模式"),
-        EDIT_SELECTION("编辑选区");
+        NORMAL("wegui.mode.normal"),
+        EDIT_SELECTION("wegui.mode.edit_selection");
 
-        private final String displayName;
+        private final String translationKey;
 
-        AxeMode(String displayName) {
-            this.displayName = displayName;
+        AxeMode(String translationKey) {
+            this.translationKey = translationKey;
+        }
+
+        public String getTranslationKey() {
+            return translationKey;
         }
 
         public String getDisplayName() {
-            return displayName;
+            return Component.translatable(translationKey).getString();
         }
     }
 
+    private enum LastModifiedCorner {
+        NONE, POS1, POS2
+    }
+
     private static AxeMode currentMode = AxeMode.NORMAL;
-    private static long lastScrollTime = 0;
-    private static final long SCROLL_COOLDOWN_MS = 80;
+    private static LastModifiedCorner lastModified = LastModifiedCorner.NONE;
 
     public static void register() {
-        // 滚动事件由 Mixin 注入后调用 handleMouseScroll。
+        // 左键记录 pos1 为最后修改点，并根据开关显示提示
+        AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
+            if (level.isClientSide() && hand == InteractionHand.MAIN_HAND && isHoldingConfiguredWand(player)) {
+                lastModified = LastModifiedCorner.POS1;
+                if (Configs.Generic.SELECTION_MESSAGE_ENABLED.getBooleanValue()) {
+                    player.displayClientMessage(Component.translatable("wegui.message.pos1_set", formatPos(pos)).withStyle(ChatFormatting.DARK_PURPLE), false);
+                }
+            }
+            return InteractionResult.PASS;
+        });
+
+        // 右键记录 pos2 为最后修改点，并根据开关显示提示
+        UseItemCallback.EVENT.register((player, level, hand) -> {
+            if (level.isClientSide() && hand == InteractionHand.MAIN_HAND && isHoldingConfiguredWand(player)) {
+                lastModified = LastModifiedCorner.POS2;
+                if (Configs.Generic.SELECTION_MESSAGE_ENABLED.getBooleanValue()) {
+                    BlockPos target = getLookingAtPos(player, level);
+                    if (target != null) {
+                        player.displayClientMessage(Component.translatable("wegui.message.pos2_set", formatPos(target)).withStyle(ChatFormatting.DARK_PURPLE), false);
+                    }
+                }
+            }
+            return InteractionResult.PASS;
+        });
     }
 
     public static AxeMode getMode() {
         return currentMode;
     }
 
-    public static void toggleMode() {
-        currentMode = currentMode == AxeMode.NORMAL ? AxeMode.EDIT_SELECTION : AxeMode.NORMAL;
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player != null) {
-            mc.player.displayClientMessage(Component.literal("§a[WE GUI] 小木斧模式: §f" + currentMode.getDisplayName()), true);
-        }
-    }
-
+    /**
+     * 处理鼠标滚动事件。只要手持木斧且按下了 Ctrl 或 Alt，就返回 true 以消费事件，
+     * 防止滚轮继续触发物品栏切换等默认行为。
+     */
     public static boolean handleMouseScroll(double scrollDelta) {
-        if (currentMode != AxeMode.EDIT_SELECTION) return false;
         if (scrollDelta == 0) return false;
-
-        long now = System.currentTimeMillis();
-        if (now - lastScrollTime < SCROLL_COOLDOWN_MS) return false;
 
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (player == null || mc.screen != null) return false;
-        if (!isHoldingWoodenAxe(player)) return false;
-        if (!isAltHeld()) return false;
+        if (!isHoldingConfiguredWand(player)) return false;
 
-        WorldEditBridge.CornerPositions corners = WorldEditBridge.getSelectionCorners(mc);
+        boolean ctrl = isModifierHeld(GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_RIGHT_CONTROL);
+        boolean alt = isModifierHeld(GLFW.GLFW_KEY_LEFT_ALT, GLFW.GLFW_KEY_RIGHT_ALT);
+        if (!ctrl && !alt) return false;
+
+        if (ctrl) {
+            cycleMode(player);
+            return true;
+        }
+
+        // alt：仅在编辑选区模式下移动选点
+        if (currentMode != AxeMode.EDIT_SELECTION) {
+            player.displayClientMessage(Component.translatable("wegui.message.need_edit_mode").withStyle(ChatFormatting.RED), true);
+            return true;
+        }
+
+        WorldEditBridge.PartialCornerPositions corners = WorldEditBridge.getPartialSelectionCorners(mc);
         if (corners == null) {
-            player.displayClientMessage(Component.literal("§c[WE GUI] 没有可用的立方体选区"), true);
+            player.displayClientMessage(Component.translatable("wegui.message.no_selection").withStyle(ChatFormatting.RED), true);
+            return true;
+        }
+
+        if (lastModified == LastModifiedCorner.NONE) {
+            player.displayClientMessage(Component.translatable("wegui.message.no_corner").withStyle(ChatFormatting.RED), true);
+            return true;
+        }
+
+        BlockPos target = lastModified == LastModifiedCorner.POS1 ? corners.pos1() : corners.pos2();
+        if (target == null) {
+            player.displayClientMessage(Component.translatable("wegui.message.corner_not_set").withStyle(ChatFormatting.RED), true);
             return true;
         }
 
         int amount = scrollDelta > 0 ? 1 : -1;
         Direction direction = getLookDirection(player);
-        if (direction == null) return true;
-
-        BlockPos target = getTargetCorner(mc, corners);
-        if (target != null) {
-            // 移动单个角点
-            BlockPos moved = target.relative(direction, amount);
-            if (target.equals(corners.pos1())) {
-                CommandSender.send("//pos1 " + formatPos(moved));
-                player.displayClientMessage(Component.literal("§a[WE GUI] 移动 pos1: §f" + formatPos(moved)), true);
-            } else {
-                CommandSender.send("//pos2 " + formatPos(moved));
-                player.displayClientMessage(Component.literal("§a[WE GUI] 移动 pos2: §f" + formatPos(moved)), true);
-            }
-        } else {
-            // 整体平移选区
-            BlockPos moved1 = corners.pos1().relative(direction, amount);
-            BlockPos moved2 = corners.pos2().relative(direction, amount);
-            CommandSender.send("//pos1 " + formatPos(moved1));
-            CommandSender.send("//pos2 " + formatPos(moved2));
-            player.displayClientMessage(Component.literal("§a[WE GUI] 平移选区: §f" + formatPos(moved1) + " -> " + formatPos(moved2)), true);
+        if (direction == null) {
+            return true;
         }
 
-        lastScrollTime = now;
+        BlockPos moved = target.relative(direction, amount);
+
+        if (lastModified == LastModifiedCorner.POS1) {
+            CommandSender.send("//pos1 " + formatPos(moved));
+            player.displayClientMessage(Component.translatable("wegui.message.moved_pos1", formatPos(moved)).withStyle(ChatFormatting.GREEN), true);
+        } else {
+            CommandSender.send("//pos2 " + formatPos(moved));
+            player.displayClientMessage(Component.translatable("wegui.message.moved_pos2", formatPos(moved)).withStyle(ChatFormatting.GREEN), true);
+        }
+
         return true;
     }
 
-    private static boolean isHoldingWoodenAxe(LocalPlayer player) {
-        return player.getMainHandItem().is(Items.WOODEN_AXE)
-                || player.getOffhandItem().is(Items.WOODEN_AXE);
+    private static void cycleMode(LocalPlayer player) {
+        AxeMode[] values = AxeMode.values();
+        currentMode = values[(currentMode.ordinal() + 1) % values.length];
+        player.displayClientMessage(Component.translatable("wegui.message.mode_changed", currentMode.getDisplayName()).withStyle(ChatFormatting.GREEN), true);
     }
 
-    private static boolean isAltHeld() {
-        long window = Minecraft.getInstance().getWindow().getWindow();
-        return GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_ALT) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_ALT) == GLFW.GLFW_PRESS;
+    public static boolean isHoldingConfiguredWand(Player player) {
+        Item wandItem = getConfiguredWandItem();
+        if (wandItem == null) return false;
+        return player.getMainHandItem().is(wandItem)
+                || player.getOffhandItem().is(wandItem);
+    }
+
+    @Nullable
+    private static Item getConfiguredWandItem() {
+        String id = Configs.Generic.WAND_ITEM.getStringValue();
+        try {
+            net.minecraft.resources.Identifier identifier = net.minecraft.resources.Identifier.parse(id);
+            return net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier)
+                    .map(ref -> ref.value())
+                    .orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static boolean isModifierHeld(int leftKey, int rightKey) {
+        long window = GLFW.glfwGetCurrentContext();
+        if (window == 0) return false;
+        return GLFW.glfwGetKey(window, leftKey) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(window, rightKey) == GLFW.GLFW_PRESS;
     }
 
     private static Direction getLookDirection(LocalPlayer player) {
         Vec3 view = player.getViewVector(1.0f);
-        return Direction.getNearest(view.x, view.y, view.z);
+        double ax = Math.abs(view.x);
+        double ay = Math.abs(view.y);
+        double az = Math.abs(view.z);
+        if (ax >= ay && ax >= az) {
+            return view.x > 0 ? Direction.EAST : Direction.WEST;
+        } else if (ay >= ax && ay >= az) {
+            return view.y > 0 ? Direction.UP : Direction.DOWN;
+        } else {
+            return view.z > 0 ? Direction.SOUTH : Direction.NORTH;
+        }
     }
 
     @Nullable
-    private static BlockPos getTargetCorner(Minecraft mc, WorldEditBridge.CornerPositions corners) {
-        LocalPlayer player = mc.player;
-        if (player == null) return null;
-
-        double reach = 64.0;
+    private static BlockPos getLookingAtPos(Player player, Level level) {
+        double reach = player.blockInteractionRange();
         Vec3 eye = player.getEyePosition(1.0f);
         Vec3 view = player.getViewVector(1.0f);
         Vec3 end = eye.add(view.x * reach, view.y * reach, view.z * reach);
-
-        AABB box1 = cornerBox(corners.pos1());
-        AABB box2 = cornerBox(corners.pos2());
-
-        Vec3 hit1 = clipBox(box1, eye, end);
-        Vec3 hit2 = clipBox(box2, eye, end);
-
-        if (hit1 == null && hit2 == null) return null;
-        if (hit1 == null) return corners.pos2();
-        if (hit2 == null) return corners.pos1();
-
-        double d1 = eye.distanceToSqr(hit1);
-        double d2 = eye.distanceToSqr(hit2);
-        return d1 <= d2 ? corners.pos1() : corners.pos2();
-    }
-
-    private static AABB cornerBox(BlockPos pos) {
-        return new AABB(
-                pos.getX() - 0.125, pos.getY() - 0.125, pos.getZ() - 0.125,
-                pos.getX() + 1.125, pos.getY() + 1.125, pos.getZ() + 1.125);
-    }
-
-    @Nullable
-    private static Vec3 clipBox(AABB box, Vec3 start, Vec3 end) {
-        double[] tMin = {0.0};
-        double[] tMax = {1.0};
-        if (!clipLine(box.minX, box.maxX, start.x, end.x, tMin, tMax)) return null;
-        if (!clipLine(box.minY, box.maxY, start.y, end.y, tMin, tMax)) return null;
-        if (!clipLine(box.minZ, box.maxZ, start.z, end.z, tMin, tMax)) return null;
-        if (tMin[0] < 0 || tMin[0] > 1) return null;
-        return start.lerp(tMin[0], end);
-    }
-
-    private static boolean clipLine(double min, double max, double start, double end, double[] tMin, double[] tMax) {
-        double dir = end - start;
-        if (Math.abs(dir) < 1e-6) {
-            return start >= min && start <= max;
+        BlockHitResult result = level.clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+        if (result.getType() == HitResult.Type.BLOCK) {
+            return result.getBlockPos();
         }
-        double t1 = (min - start) / dir;
-        double t2 = (max - start) / dir;
-        if (t1 > t2) {
-            double tmp = t1;
-            t1 = t2;
-            t2 = tmp;
-        }
-        if (t1 > tMin[0]) tMin[0] = t1;
-        if (t2 < tMax[0]) tMax[0] = t2;
-        return tMin[0] <= tMax[0];
+        return null;
     }
 
     private static String formatPos(BlockPos pos) {

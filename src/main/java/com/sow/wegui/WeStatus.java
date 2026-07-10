@@ -47,14 +47,14 @@ public record WeStatus(
                 .replace("{length}", String.valueOf(length))
                 .replace("{size}", width + "×" + height + "×" + length)
                 .replace("{count}", String.valueOf(blockCount))
-                .replace("{clipboard}", hasClipboard ? "有" : "无")
+                .replace("{clipboard}", hasClipboard ? "{clipboard.yes}" : "{clipboard.no}")
                 .replace("{clipboardSize}", clipboardWidth + "×" + clipboardHeight + "×" + clipboardLength);
     }
 
     private String defaultText() {
         return switch (type) {
-            case NO_WORLDEDIT -> "WorldEdit 未加载";
-            case NO_SELECTION -> "无选区";
+            case NO_WORLDEDIT -> "{status.no_worldedit}";
+            case NO_SELECTION -> "{status.no_selection}";
             case READY -> width + "×" + height + "×" + length;
         };
     }

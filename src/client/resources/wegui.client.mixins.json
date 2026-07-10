@@ -4,6 +4,7 @@
   "package": "com.sow.wegui.client.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "MouseHandlerMixin"
+    "MouseHandlerMixin",
+    "ClientPacketListenerMixin"
   ]
 }

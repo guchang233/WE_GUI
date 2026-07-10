@@ -1,76 +1,46 @@
 package com.sow.wegui.client;
 
-import com.mojang.blaze3d.platform.InputConstants;
-import com.sow.wegui.client.screen.SettingsScreen;
-import com.sow.wegui.config.Config;
+import com.sow.wegui.InitHandler;
+import com.sow.wegui.config.Configs;
+import fi.dy.masa.malilib.event.InitializationHandler;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.KeyMapping;
-import net.minecraft.client.Minecraft;
 
 /**
- * 客户端入口：注册按键、HUD、粘贴预览。
+ * 客户端入口：加载配置、注册 HUD、粘贴预览与输入处理。
+ * WAND_ITEM 与 WorldEdit 的 wandItem 保持双向同步。
  */
 public class WeGuiClient implements ClientModInitializer {
-    public static final String KEY_OPEN_PANEL = "key.wegui.open_panel";
-    public static final String KEY_TOGGLE_AXE_MODE = "key.wegui.toggle_axe_mode";
-    private static KeyMapping openPanelKey;
-    private static KeyMapping toggleAxeModeKey;
 
     @Override
     public void onInitializeClient() {
-        Config.load();
-        openPanelKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                KEY_OPEN_PANEL,
-                InputConstants.Type.KEYSYM,
-                Config.get().getKeyOpenPanel(),
-                KeyMapping.Category.MISC
-        ));
-        toggleAxeModeKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                KEY_TOGGLE_AXE_MODE,
-                InputConstants.Type.KEYSYM,
-                Config.get().getKeyToggleAxeMode(),
-                KeyMapping.Category.MISC
-        ));
+        Configs.loadFromFile();
+        InitializationHandler.getInstance().registerInitializationHandler(new InitHandler());
 
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (openPanelKey.consumeClick()) {
-                openMainPanel();
-            }
-            if (toggleAxeModeKey.consumeClick()) {
-                AxeModeHandler.toggleMode();
+        // 初始化时以本模组配置为准同步到 WorldEdit，保证两边一致
+        String cfgWand = Configs.Generic.WAND_ITEM.getStringValue();
+        WorldEditBridge.setWandItem(cfgWand);
+        WorldEditBridge.bindWandItem(cfgWand);
+
+        // 配置改变 -> 同步到 WorldEdit（默认 wand 配置 + 当前玩家 session 的工具绑定）
+        Configs.Generic.WAND_ITEM.setValueChangeCallback(cfg -> {
+            String itemId = cfg.getStringValue();
+            WorldEditBridge.setWandItem(itemId);
+            WorldEditBridge.bindWandItem(itemId);
+        });
+
+        // 每 tick 检查 WorldEdit 默认 wandItem 是否被外部命令修改，回写到配置
+        ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            if (mc.player == null) return;
+            String current = WorldEditBridge.getWandItem();
+            String cfg = Configs.Generic.WAND_ITEM.getStringValue();
+            if (!current.isEmpty() && !current.equals(cfg)) {
+                Configs.Generic.WAND_ITEM.setValueFromString(current);
             }
         });
 
         StatusBar.register();
         PastePreviewRenderer.register();
         AxeModeHandler.register();
-    }
-
-    private static void openMainPanel() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.screen != null) return;
-        mc.setScreen(new SettingsScreen(null));
-    }
-
-    /**
-     * 更新打开主面板的按键绑定。
-     */
-    public static void updateKeyOpenPanel(int keyCode) {
-        Config.get().setKeyOpenPanel(keyCode);
-        if (openPanelKey != null) {
-            openPanelKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(keyCode));
-        }
-    }
-
-    /**
-     * 更新切换小木斧模式的按键绑定。
-     */
-    public static void updateKeyToggleAxeMode(int keyCode) {
-        Config.get().setKeyToggleAxeMode(keyCode);
-        if (toggleAxeModeKey != null) {
-            toggleAxeModeKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(keyCode));
-        }
     }
 }

@@ -3,10 +3,18 @@ package com.sow.wegui.commands;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import net.minecraft.core.Registry;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.biome.Biome;
 
 /**
  * WorldEdit 命令定义与注册表。
@@ -19,10 +27,15 @@ public final class WeCommands {
     private static final Map<Category, List<Command>> BY_CATEGORY = new EnumMap<>(Category.class);
     private static boolean initialized = false;
     private static Category currentCategory;
+    private static List<Option> BIOME_OPTIONS;
+    private static List<Option> ENTITY_TYPE_OPTIONS;
 
     public static void init() {
         if (initialized) return;
         initialized = true;
+
+        initBiomeOptions();
+        initEntityTypeOptions();
 
         registerGeneral();
         registerSelection();
@@ -59,29 +72,29 @@ public final class WeCommands {
     // ==================== 数据模型 ====================
 
     public enum Category {
-        GENERAL("通用"),
-        SELECTION("选区"),
-        REGION("区域"),
-        GENERATION("生成"),
-        CLIPBOARD("剪贴板"),
-        SUPER_PICKAXE("超级镐"),
-        TOOL("工具"),
-        BRUSH("笔刷"),
-        NAVIGATION("导航"),
-        BIOME("生物群系"),
-        CHUNK("区块"),
-        SNAPSHOT("快照"),
-        SCRIPT("脚本"),
-        UTILITY("实用工具");
+        GENERAL("wegui.category.general"),
+        SELECTION("wegui.category.selection"),
+        REGION("wegui.category.region"),
+        GENERATION("wegui.category.generation"),
+        CLIPBOARD("wegui.category.clipboard"),
+        SUPER_PICKAXE("wegui.category.super_pickaxe"),
+        TOOL("wegui.category.tool"),
+        BRUSH("wegui.category.brush"),
+        NAVIGATION("wegui.category.navigation"),
+        BIOME("wegui.category.biome"),
+        CHUNK("wegui.category.chunk"),
+        SNAPSHOT("wegui.category.snapshot"),
+        SCRIPT("wegui.category.script"),
+        UTILITY("wegui.category.utility");
 
-        private final String displayName;
+        private final String translationKey;
 
-        Category(String displayName) {
-            this.displayName = displayName;
+        Category(String translationKey) {
+            this.translationKey = translationKey;
         }
 
-        public String getDisplayName() {
-            return displayName;
+        public String getTranslationKey() {
+            return translationKey;
         }
     }
 
@@ -92,26 +105,26 @@ public final class WeCommands {
     }
 
     public enum ParamType {
-        INTEGER("整数"),
-        DECIMAL("小数"),
-        STRING("文本"),
-        BOOLEAN("开关"),
-        FLAG("标志"),
-        PATTERN("方块图案"),
-        MASK("方块掩码"),
-        AXIS("旋转轴"),
-        FILENAME("文件名"),
-        PLAYER("玩家名"),
-        ENUM("选项");
+        INTEGER("wegui.param_type.integer"),
+        DECIMAL("wegui.param_type.decimal"),
+        STRING("wegui.param_type.string"),
+        BOOLEAN("wegui.param_type.boolean"),
+        FLAG("wegui.param_type.flag"),
+        PATTERN("wegui.param_type.pattern"),
+        MASK("wegui.param_type.mask"),
+        AXIS("wegui.param_type.axis"),
+        FILENAME("wegui.param_type.filename"),
+        PLAYER("wegui.param_type.player"),
+        ENUM("wegui.param_type.enum");
 
-        private final String displayName;
+        private final String translationKey;
 
-        ParamType(String displayName) {
-            this.displayName = displayName;
+        ParamType(String translationKey) {
+            this.translationKey = translationKey;
         }
 
-        public String getDisplayName() {
-            return displayName;
+        public String getTranslationKey() {
+            return translationKey;
         }
     }
 
@@ -324,18 +337,58 @@ public final class WeCommands {
     private static final Param EXPRESSION = new Param("表达式", ParamType.STRING, "", "如 x^2+y^2+z^2<100");
     private static final Param FILENAME = new Param("文件名", ParamType.FILENAME, "my_build");
     private static final Param PLAYER = new Param("玩家", ParamType.PLAYER, "", true);
-    private static final Param BIOME = new Param("群系", ParamType.STRING, "", "如 minecraft:plains");
     private static final Param SNAPSHOT_NAME = new Param("快照名", ParamType.STRING, "2024-01-01-01");
     private static final Param DATE = new Param("日期", ParamType.STRING, "2024-01-01");
     private static final Param SCRIPT = new Param("脚本名", ParamType.STRING, "myscript");
     private static final Param QUERY = new Param("关键词", ParamType.STRING, "", "如 stone");
     private static final Param STEPS = new Param("步数", ParamType.INTEGER, "1", true);
     private static final Param OFFSET = new Param("偏移", ParamType.STRING, "", "如 north 或 0,1,0", true);
-    private static final Param BLOCK_TYPE = new Param("实体类型", ParamType.STRING, "", "如 minecraft:pig");
     private static final Param BUTCHER_FLAGS = new Param("标志", ParamType.STRING, "", "如 -plangbtfr", true);
     private static final Param DENSITY = new Param("密度", ParamType.DECIMAL, "5", true);
 
     // ==================== 分类注册 ====================
+
+    private static void initBiomeOptions() {
+        if (BIOME_OPTIONS != null) return;
+
+        List<Option> list = new ArrayList<>();
+        try {
+            RegistryAccess.Frozen access = RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
+            Registry<Biome> biomeRegistry = access.lookupOrThrow(Registries.BIOME);
+            for (Biome biome : biomeRegistry) {
+                String id = biomeRegistry.getKey(biome).toString();
+                list.add(new Option(id, id, id));
+            }
+        } catch (Throwable ignored) {
+            // 注册表尚未准备好时回退到空列表
+        }
+        list.sort(Comparator.comparing(Option::label));
+        BIOME_OPTIONS = list;
+    }
+
+    private static void initEntityTypeOptions() {
+        if (ENTITY_TYPE_OPTIONS != null) return;
+
+        List<Option> list = new ArrayList<>();
+        try {
+            for (EntityType<?> type : BuiltInRegistries.ENTITY_TYPE) {
+                String id = BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
+                list.add(new Option(id, id, id));
+            }
+        } catch (Throwable ignored) {
+            // 注册表尚未准备好时回退到空列表
+        }
+        list.sort(Comparator.comparing(Option::label));
+        ENTITY_TYPE_OPTIONS = list;
+    }
+
+    private static Param biomeParam(String name, String defaultValue, boolean optional) {
+        return new Param(name, ParamType.ENUM, BIOME_OPTIONS, defaultValue, optional);
+    }
+
+    private static Param entityTypeParam(String name, String defaultValue, boolean optional) {
+        return new Param(name, ParamType.ENUM, ENTITY_TYPE_OPTIONS, defaultValue, optional);
+    }
 
     private static void registerGeneral() {
         currentCategory = Category.GENERAL;
@@ -538,13 +591,13 @@ public final class WeCommands {
         currentCategory = Category.BIOME;
         register("setbiome", "设置群系", "将选区内方块设置为指定群系",
                 param("setbiome", "//setbiome", "//setbiome [-p] <群系>", "设置群系",
-                        new Param("-p 玩家列", ParamType.FLAG, "-p", true), BIOME));
+                        new Param("-p 玩家列", ParamType.FLAG, "-p", true), biomeParam("群系", "minecraft:plains", false)));
         register("biomeinfo", "群系信息", "查看准星或当前位置群系",
                 param("biomeinfo", "/biomeinfo", "/biomeinfo [-pt]", "群系信息", BIOMEINFO_PT));
         register("replacebiome", "替换群系", "替换选区内的群系",
                 param("replacebiome", "//replacebiome", "//replacebiome <原群系> <目标群系>", "替换群系",
-                        new Param("原群系", ParamType.STRING, "minecraft:plains"),
-                        new Param("目标群系", ParamType.STRING, "minecraft:forest")));
+                        biomeParam("原群系", "minecraft:plains", false),
+                        biomeParam("目标群系", "minecraft:forest", false)));
     }
 
     private static void registerChunk() {
@@ -571,7 +624,7 @@ public final class WeCommands {
     private static void registerUtility() {
         currentCategory = Category.UTILITY;
         register("calc", "计算器", "计算数学表达式", param("calc", "//calc", "//calc <表达式>", "计算表达式", EXPRESSION));
-        register("remove", "移除实体", "移除指定类型的实体", param("remove", "/remove", "/remove <类型> <半径>", "移除实体", BLOCK_TYPE, RANGE));
+        register("remove", "移除实体", "移除指定类型的实体", param("remove", "/remove", "/remove <类型> <半径>", "移除实体", entityTypeParam("实体类型", "minecraft:pig", false), RANGE));
         register("butcher", "击杀生物", "击杀指定半径内的生物", param("butcher", "/butcher", "/butcher [标志] [半径]", "击杀生物", BUTCHER_FLAGS, RADIUS));
         register("extinguish", "灭火", "熄灭指定半径内的火焰", param("extinguish", "/ex", "/ex [半径]", "熄灭火焰", RADIUS));
         register("green", "草化", "将泥土转为草方块",
@@ -592,7 +645,7 @@ public final class WeCommands {
         register("removebelow", "移除下方", "移除玩家下方指定范围的方块",
                 param("removebelow", "/removebelow", "/removebelow [尺寸] [高度]", "移除下方", SIZE, HEIGHT));
         register("removenear", "移除附近", "移除玩家附近指定类型的方块",
-                param("removenear", "/removenear", "/removenear <类型> <半径>", "移除附近", BLOCK_TYPE, RANGE));
+                param("removenear", "/removenear", "/removenear <类型> <半径>", "移除附近", entityTypeParam("实体类型", "minecraft:pig", false), RANGE));
         register("center", "中心点", "在选区中心放置方块", param("center", "//center", "//center <图案>", "中心方块", PATTERN));
         register("revolve", "旋转复制", "绕轴旋转复制选区",
                 param("revolve", "//revolve", "//revolve <角度> [轴] [复制份数]", "旋转复制",
