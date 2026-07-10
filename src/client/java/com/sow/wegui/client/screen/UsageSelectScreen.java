@@ -23,7 +23,7 @@ public class UsageSelectScreen extends GuiBase {
         this.setParent(parent);
         this.parent = parent;
         this.command = command;
-        this.setTitle(command.displayName());
+        this.setTitle(StringUtils.translate(command.displayName()));
     }
 
     @Override
@@ -33,14 +33,14 @@ public class UsageSelectScreen extends GuiBase {
         ButtonGeneric back = new ButtonGeneric(10, 5, 60, 18, StringUtils.translate("wegui.command.back"));
         this.addButton(back, (btn, mouseButton) -> this.mc.setScreen(parent));
 
-        this.addLabel(20, 32, this.width - 40, 12, 0xFFAAAAAA, command.description());
+        this.addLabel(20, 32, this.width - 40, 12, 0xFFAAAAAA, StringUtils.translate(command.description()));
 
         List<Usage> usages = command.usages();
         int y = 55;
         int btnW = Math.min(360, this.width - 40);
         int x = (this.width - btnW) / 2;
         for (Usage usage : usages) {
-            String label = usage.description();
+            String label = StringUtils.translate(usage.description());
             if (label == null || label.isBlank()) label = usage.displayTemplate();
             ButtonGeneric btn = new ButtonGeneric(x, y, btnW, 20, label);
             btn.setHoverStrings(usage.displayTemplate());

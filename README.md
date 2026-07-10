@@ -1,60 +1,52 @@
-# WorldEdit GUI (WeGui)
 
-WorldEdit 可视化助手 —— 为 Minecraft Fabric 服务器提供快捷轮盘与分类 GUI 面板，让你无需记忆繁琐指令即可轻松使用 WorldEdit。
 
-## 功能特性
 
-- 🎯 **快捷轮盘** —— 按住快捷键呼出轮盘菜单，快速切换常用 WorldEdit 功能
-- 📂 **分类 GUI 面板** —— 按功能分类展示所有可用指令，点选即用
-- 📋 **参数输入面板** —— 直观的 UI 界面，无需记忆指令语法
-- 👁 **粘贴预览** —— 粘贴前预览结构，避免误操作
-- 🎨 **多语言支持** —— 支持中英文切换
+# [简体中文](README.md) | [English](README_EN.md)
 
-## 演示
+---
 
-> 🎬 *功能演示 GIF *
+# 描述
+为 WorldEdit 模组提供了一个GUI 以及剪切板所选内容的 3D 预览功能（类似于 [Litematica](https://modrinth.com/mod/litematica) 的原理图效果），让你无需记忆复杂的命令即可轻松使用 WorldEdit。该模组全面支持英语和中文。
 
-<img width="600" height="450" alt="QQ20260709-221355" src="https://github.com/user-attachments/assets/e99900b4-fd8b-4af3-a398-b414655f8fcc" />
+# 功能
+---
+📂 WE 指令分类
 
->渲染copy选区
+ 计划将WE内所有可用指令都整合，点击即用 (仍在优化)
+ 
+---
+👁 3D 渲染预览（类似投影）
 
-<img width="600" height="450" alt="QQ20260709-221444" src="https://github.com/user-attachments/assets/162906a7-d8c4-4ef4-9206-48451ec5248f" />
+ 在 `//copy` 之后，你可以看到下次执行 `//paste` 时该结构会出现在哪里
 
->图形GUI界面
+---
+📋 Quick Wheel Menu
 
-## 环境要求
+ 支持自定义和添加所有可用指令到轮盘菜单（即将添加）
 
-- **Minecraft**: 1.21.11
-- **Fabric Loader**: >= 0.18.4
-- **Java**: >= 21
-- **Fabric API**: 0.141.4+
-- **WorldEdit**: 7.4.2+（建议安装，部分功能可用）
+---
+# 预览
 
-## 安装
+![选区渲染预览](https://github.com/user-attachments/assets/1b2733e2-fb77-42eb-94ac-bd70d6d9b1a8)
+⬆️在执行 `//copy` 之后，你可以看到该结构在下一次执行 `//paste` 时会出现在哪里。如果执行了 `//rotate` 或 `//flip` 操作，渲染效果将相应地更新。
 
-1. 安装 [Fabric Loader](https://fabricmc.net/use/)
-2. 下载 [Fabric API](https://modrinth.com/mod/fabric-api)
-3. 下载本模组的 JAR 文件放入 `mods` 文件夹
-4. （可选）安装 [WorldEdit](https://modrinth.com/mod/worldedit) 以使用完整功能
-5. 启动游戏
+---
 
-## 构建
+![GUI预览](https://github.com/user-attachments/assets/b6bd67a1-0ad9-46be-ae4a-434ae58fa134)
+⬆️正在努力优化GUI样式。
 
-```bash
-# 克隆仓库
-git clone https://github.com/guchang233/WE_GUI.git
-cd WE_GUI
+---
+[YouTube](https://www.youtube-nocookie.com/embed/qq780XHGRP8)
 
-# 构建 JAR
-./gradlew build
+# 关于
 
-# 构建产物位于 build/libs/
-```
 
-## 从 release 下载
+>需要前置mod [malilib](https://modrinth.com/mod/malilib) 和 [worldeidt](https://modrinth.com/plugin/worldedit) 
 
-每次推送时会自动构建并发布JAR文件到[Release](https://github.com/guchang233/WE_GUI/releases) 页面。
 
-## 许可
+## License
 
 [MIT](LICENSE)
+
+
+_Open source on [github](https://github.com/guchang233/WE_GUI/)_

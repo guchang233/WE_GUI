@@ -6,6 +6,7 @@ import com.sow.wegui.commands.WeCommands.Usage;
 import com.sow.wegui.client.CommandSender;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
 import fi.dy.masa.malilib.gui.widgets.WidgetListEntryBase;
+import fi.dy.masa.malilib.util.StringUtils;
 import net.minecraft.client.Minecraft;
 
 import java.util.Collections;
@@ -28,10 +29,10 @@ public class WidgetCommandEntry extends WidgetListEntryBase<CommandRow> {
     }
 
     private void addCommandButton(int x, int y, int width, int height, Command command) {
-        NoScrollButton button = new NoScrollButton(x, y, width, height, command.displayName());
+        NoScrollButton button = new NoScrollButton(x, y, width, height, StringUtils.translate(command.displayName()));
         button.setTextCentered(true);
         if (!command.description().isBlank()) {
-            button.setHoverStrings(command.description());
+            button.setHoverStrings(StringUtils.translate(command.description()));
         }
         this.addButton(button, new CommandButtonListener(command));
     }

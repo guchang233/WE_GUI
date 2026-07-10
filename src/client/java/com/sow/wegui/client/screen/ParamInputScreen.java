@@ -41,7 +41,7 @@ public class ParamInputScreen extends GuiBase {
         this.parent = parent;
         this.command = command;
         this.usage = usage;
-        this.setTitle(command.displayName());
+        this.setTitle(StringUtils.translate(command.displayName()));
     }
 
     @Override
@@ -50,12 +50,12 @@ public class ParamInputScreen extends GuiBase {
 
         int maxW = this.width - MARGIN_X * 2;
         headerLines.clear();
-        headerLines.addAll(splitLines("用法: " + usage.displayTemplate(), maxW));
+        headerLines.addAll(splitLines("用法: " + StringUtils.translate(usage.displayTemplate()), maxW));
         if (!usage.description().isBlank()) {
-            headerLines.addAll(splitLines(usage.description(), maxW));
+            headerLines.addAll(splitLines(StringUtils.translate(usage.description()), maxW));
         }
         if (!command.description().isBlank()) {
-            headerLines.addAll(splitLines(command.description(), maxW));
+            headerLines.addAll(splitLines(StringUtils.translate(command.description()), maxW));
         }
         int headerH = headerLines.size() * (this.fontHeight + 1) + 8;
 
@@ -76,7 +76,7 @@ public class ParamInputScreen extends GuiBase {
     }
 
     private void addParamRow(Param param, int x, int y, int w) {
-        this.addLabel(x, y, w, 12, 0xFFFFFF00, param.name());
+        this.addLabel(x, y, w, 12, 0xFFFFFF00, StringUtils.translate(param.name()));
 
         String desc = descriptionOf(param);
         if (!desc.isBlank()) {
@@ -91,7 +91,7 @@ public class ParamInputScreen extends GuiBase {
         return switch (param.paramType()) {
             case FLAG -> {
                 String flagValue = param.defaultValue() == null ? "" : param.defaultValue();
-                FlagButton button = new FlagButton(x, y, w, 20, param.name(), flagValue);
+                FlagButton button = new FlagButton(x, y, w, 20, StringUtils.translate(param.name()), flagValue);
                 this.addButton(button.getButton(), (btn, mouseButton) -> button.toggle());
                 yield button;
             }
@@ -106,7 +106,7 @@ public class ParamInputScreen extends GuiBase {
                         }
                     }
                 }
-                IStringRetriever<Option> retriever = opt -> opt == null ? "" : opt.label();
+                IStringRetriever<Option> retriever = opt -> opt == null ? "" : StringUtils.translate(opt.label());
                 WidgetDropDownList<Option> dropdown = new WidgetDropDownList<>(x, y, w, 18, 160, 12, opts, retriever);
                 if (initial != null) {
                     dropdown.setSelectedEntry(initial);
@@ -120,7 +120,7 @@ public class ParamInputScreen extends GuiBase {
                 String def = param.defaultValue() == null ? "" : param.defaultValue();
                 field.setValue(def);
                 if (param.hint() != null && !param.hint().isBlank()) {
-                    field.setHint(net.minecraft.network.chat.Component.literal(param.hint()));
+                    field.setHint(net.minecraft.network.chat.Component.literal(StringUtils.translate(param.hint())));
                 }
                 field.setMaxLength(256);
                 TextFieldWrapper<GuiTextFieldGeneric> wrapper = this.addTextField(field, (textField) -> true);
@@ -138,7 +138,7 @@ public class ParamInputScreen extends GuiBase {
         String def = param.defaultValue() == null ? "" : param.defaultValue();
         field.setValue(def);
         if (param.hint() != null && !param.hint().isBlank()) {
-            field.setHint(Component.literal(param.hint()));
+            field.setHint(Component.literal(StringUtils.translate(param.hint())));
         }
         field.setMaxLength(256);
         TextFieldWrapper<GuiTextFieldGeneric> wrapper = this.addTextField(field, (textField) -> true);
@@ -210,9 +210,9 @@ public class ParamInputScreen extends GuiBase {
 
     private static String descriptionOf(Param param) {
         String d = param.description();
-        if (d != null && !d.isBlank()) return d;
+        if (d != null && !d.isBlank()) return StringUtils.translate(d);
         String h = param.hint();
-        return h == null ? "" : h;
+        return h == null ? "" : StringUtils.translate(h);
     }
 
     private interface InputControl {

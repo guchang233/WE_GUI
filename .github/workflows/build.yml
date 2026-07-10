@@ -16,9 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      minecraft_version: ${{ steps.meta.outputs.minecraft_version }}
+      mod_version: ${{ steps.meta.outputs.mod_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Read project metadata
+        id: meta
+        run: |
+          echo "minecraft_version=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)" >> $GITHUB_OUTPUT
+          echo "mod_version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)" >> $GITHUB_OUTPUT
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v6
@@ -59,8 +68,34 @@ jobs:
         with:
           name: WeGui-${{ github.run_number }}
 
+      - name: Resolve version
+        id: ver
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
           files: "*.jar"
           generate_release_notes: true
+
+      - name: Publish to Modrinth
+        uses: cloudnode-pro/modrinth-publish@v2
+        with:
+          token: ${{ secrets.MODRINTH_TOKEN }}
+          project: ${{ secrets.MODRINTH_PROJECT_ID }}
+          version: ${{ steps.ver.outputs.VERSION }}
+          name: "WorldEdit GUI ${{ steps.ver.outputs.VERSION }}"
+          changelog: "See GitHub release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          loaders: |-
+            fabric
+          game-versions: |-
+            ${{ needs.build.outputs.minecraft_version }}
+          files: |-
+            *.jar
+          primary-file: "wegui-${{ steps.ver.outputs.VERSION }}.jar"
+          dependencies: |-
+            [
+              {"project_id": "P7dR8mSH", "dependency_type": "required"},
+              {"project_id": "GcWjdA9I", "dependency_type": "required"},
+              {"project_id": "1u6JkXh5", "dependency_type": "optional"}
+            ]
