@@ -38,7 +38,7 @@ public final class ParamControlFactory {
 
     private static IParamControl createEnumControl(GuiBase screen, int x, int y, int w, Param param, ParamControlType controlType) {
         int count = param.options().size();
-        if (controlType == ParamControlType.SEARCHABLE_DROPDOWN || count > 6) {
+        if (controlType == ParamControlType.SEARCHABLE_DROPDOWN) {
             return new PickerControl(screen, x, y, w, param, param.options());
         }
         if (controlType == ParamControlType.BUTTON_ROW || count <= 6) {

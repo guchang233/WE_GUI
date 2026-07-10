@@ -17,7 +17,9 @@ import net.minecraft.client.input.KeyEvent;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 参数输入界面：两列表单、按类型自动选择控件、实时预览、基础校验、多用法页内切换。
@@ -38,6 +40,7 @@ public class ParamInputScreen extends GuiBase {
     private Usage selectedUsage;
     private final List<ParamRow> rows = new ArrayList<>();
     private final List<String> headerLines = new ArrayList<>();
+    private final Map<String, String> preservedValues = new HashMap<>();
     private String errorMessage = "";
     private int focusedIndex = -1;
 
@@ -57,6 +60,10 @@ public class ParamInputScreen extends GuiBase {
     }
 
     private void rebuildAll() {
+        for (ParamRow row : rows) {
+            preservedValues.put(row.param.name(), row.control.getValue());
+        }
+
         this.clearElements();
         rows.clear();
         headerLines.clear();
@@ -65,7 +72,17 @@ public class ParamInputScreen extends GuiBase {
         rebuildHeader();
         rebuildUsageSelector();
         rebuildParams();
+        restoreValues();
         addButtons();
+    }
+
+    private void restoreValues() {
+        for (ParamRow row : rows) {
+            String saved = preservedValues.get(row.param.name());
+            if (saved != null) {
+                row.control.setValue(saved);
+            }
+        }
     }
 
     private void rebuildHeader() {
