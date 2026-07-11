@@ -41,7 +41,7 @@ public class Configs implements IConfigHandler {
     private static final String INTERNAL_KEY = WeGuiMod.MOD_ID + ".config.internal";
 
     public static class Generic {
-        public static final ConfigBooleanHotkeyed STATUS_BAR_ENABLED = new ConfigBooleanHotkeyed("statusBarEnabled", true, "").apply(GENERIC_KEY);
+        public static final ConfigBooleanHotkeyed STATUS_BAR_ENABLED = new ConfigBooleanHotkeyed("statusBarEnabled", false, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed PASTE_PREVIEW_ENABLED = new ConfigBooleanHotkeyed("pastePreviewEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed SELECTION_BOUNDS_ENABLED = new ConfigBooleanHotkeyed("selectionBoundsEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed SELECTION_MESSAGE_ENABLED = new ConfigBooleanHotkeyed("selectionMessageEnabled", false, "").apply(GENERIC_KEY);

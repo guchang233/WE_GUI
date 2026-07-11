@@ -153,7 +153,7 @@ public final class AxeModeHandler {
         if (!ctrl && !alt) return false;
 
         if (ctrl) {
-            cycleMode(player, scrollDelta > 0);
+            cycleMode(player, scrollDelta < 0);
             return true;
         }
 

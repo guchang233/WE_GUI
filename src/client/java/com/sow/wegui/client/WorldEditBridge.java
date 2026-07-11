@@ -327,34 +327,68 @@ public final class WorldEditBridge {
     /**
      * 在单人世界中直接调用 WorldEdit API，在 target 位置粘贴当前剪贴板。
      * 会应用 holder 中已有的 //flip、//rotate 等变换。
+     * 异步调度到服务端线程执行，避免 C2ME 等线程安全 mod 的并发修改异常。
+     * 返回 true 表示已成功调度（不代表粘贴已完成），false 表示前置检查失败。
      */
     public static boolean pasteClipboardAt(LocalPlayer player, BlockPos target) {
-        if (!canUseDirectPaste()) return false;
+        if (!canUseDirectPaste()) {
+            WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: canUseDirectPaste=false");
+            return false;
+        }
         try {
             MinecraftServer server = Minecraft.getInstance().getSingleplayerServer();
-            if (server == null) return false;
+            if (server == null) {
+                WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: server=null");
+                return false;
+            }
 
             ServerLevel level = server.getLevel(player.level().dimension());
-            if (level == null) return false;
+            if (level == null) {
+                WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: level=null, dim={}", player.level().dimension());
+                return false;
+            }
 
             com.sk89q.worldedit.world.World weWorld = FabricAdapter.adapt(level);
             LocalSession session = WorldEditAdapter.session(player);
-            if (session == null) return false;
-
-            ClipboardHolder holder = session.getClipboard();
-            if (holder == null) return false;
-
-            try (EditSession editSession = WorldEdit.getInstance().getEditSessionFactory().getEditSession(weWorld, -1)) {
-                Operation operation = holder.createPaste(editSession)
-                        .to(BlockVector3.at(target.getX(), target.getY(), target.getZ()))
-                        .ignoreAirBlocks(false)
-                        .build();
-                Operations.complete(operation);
-                session.remember(editSession);
-                return true;
+            if (session == null) {
+                WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: session=null, player={}", player.getName().getString());
+                return false;
             }
+
+            ClipboardHolder holder;
+            try {
+                holder = session.getClipboard();
+            } catch (Throwable e) {
+                WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: getClipboard 失败: {}", e.toString());
+                return false;
+            }
+            if (holder == null) {
+                WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: holder=null");
+                return false;
+            }
+
+            final ClipboardHolder finalHolder = holder;
+            final com.sk89q.worldedit.world.World finalWeWorld = weWorld;
+            final LocalSession finalSession = session;
+            final int tx = target.getX(), ty = target.getY(), tz = target.getZ();
+
+            WeGuiMod.LOGGER.info("[WE GUI] pasteClipboardAt: 调度到服务端线程, target=({}, {}, {})", tx, ty, tz);
+            server.execute(() -> {
+                try (EditSession editSession = WorldEdit.getInstance().getEditSessionFactory().getEditSession(finalWeWorld, -1)) {
+                    Operation operation = finalHolder.createPaste(editSession)
+                            .to(BlockVector3.at(tx, ty, tz))
+                            .ignoreAirBlocks(false)
+                            .build();
+                    Operations.complete(operation);
+                    finalSession.remember(editSession);
+                    WeGuiMod.LOGGER.info("[WE GUI] pasteClipboardAt: 粘贴成功 at ({}, {}, {})", tx, ty, tz);
+                } catch (Throwable e) {
+                    WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: 服务端线程粘贴异常 at ({}, {}, {}): {}", tx, ty, tz, e);
+                }
+            });
+            return true;
         } catch (Throwable e) {
-            WeGuiMod.LOGGER.error("Failed to paste clipboard at {}: {}", target, e);
+            WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: 调度异常 at {}: {}", target, e);
             return false;
         }
     }
