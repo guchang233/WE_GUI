@@ -27,12 +27,23 @@
 ---
 # 预览
 
-![选区渲染预览](https://github.com/user-attachments/assets/1b2733e2-fb77-42eb-94ac-bd70d6d9b1a8)
+
+<img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/1b2733e2-fb77-42eb-94ac-bd70d6d9b1a8" />
+
+
 ⬆️在执行 `//copy` 之后，你可以看到该结构在下一次执行 `//paste` 时会出现在哪里。如果执行了 `//rotate` 或 `//flip` 操作，渲染效果将相应地更新。
 
 ---
 
-![GUI预览](https://github.com/user-attachments/assets/b6bd67a1-0ad9-46be-ae4a-434ae58fa134)
+<img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/d04eaae7-dae6-48ae-acf4-f704e0dc3af3" />
+
+⬆️在执行 `//copy` 之后，你可以使用ctrl+滚轮切换模式至“移动粘贴位置”模式，让你可以像投影模组的原理图放置模式一样移动剪切板中的结构。
+
+---
+
+<img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/b1d6cf64-7c16-4f68-aa59-7e42620a12dc" />
+
+
 ⬆️正在努力优化GUI样式。
 
 ---
