@@ -116,21 +116,26 @@ public class Configs implements IConfigHandler {
         public static final ConfigString FAVORITES = new ConfigString("commandPanelFavorites", "").apply(COMMAND_PANEL_KEY);
         public static final ConfigString RECENT_COMMANDS = new ConfigString("commandPanelRecentCommands", "").apply(COMMAND_PANEL_KEY);
         public static final ConfigInteger MAX_RECENT = new ConfigInteger("commandPanelMaxRecent", 10, 0, 50).apply(COMMAND_PANEL_KEY);
+        public static final ConfigInteger RADIAL_RADIUS = new ConfigInteger("radialRadius", 70, 40, 200).apply(COMMAND_PANEL_KEY);
+        public static final ConfigInteger RADIAL_INNER_RADIUS = new ConfigInteger("radialInnerRadius", 20, 5, 80).apply(COMMAND_PANEL_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 SHOW_DESCRIPTION,
                 COMPACT_MODE,
                 FAVORITES,
                 RECENT_COMMANDS,
-                MAX_RECENT
+                MAX_RECENT,
+                RADIAL_RADIUS,
+                RADIAL_INNER_RADIUS
         );
     }
 
     public static class Hotkeys {
         public static final ConfigHotkey OPEN_GUI = new ConfigHotkey("openGui", "G").apply(HOTKEYS_KEY);
+        public static final ConfigHotkey OPEN_RADIAL = new ConfigHotkey("openRadialMenu", "R").apply(HOTKEYS_KEY);
 
-        public static final ImmutableList<IConfigValue> OPTIONS = ImmutableList.of(OPEN_GUI);
-        public static final List<IHotkey> HOTKEY_LIST = ImmutableList.of(OPEN_GUI);
+        public static final ImmutableList<IConfigValue> OPTIONS = ImmutableList.of(OPEN_GUI, OPEN_RADIAL);
+        public static final List<IHotkey> HOTKEY_LIST = ImmutableList.of(OPEN_GUI, OPEN_RADIAL);
     }
 
     public static class Internal {

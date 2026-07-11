@@ -270,9 +270,18 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
         }
     }
 
+    /**
+     * 刷新列表内容但不重置滚动位置（用于收藏切换等不需要跳转的场景）。
+     */
+    public void refreshListKeepScroll() {
+        if (listWidget != null) {
+            listWidget.refreshEntries();
+        }
+    }
+
     public void onFavoriteChanged() {
         updateCategoryButtons();
-        refreshList();
+        refreshListKeepScroll();
     }
 
     @Override

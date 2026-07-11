@@ -70,6 +70,8 @@
 
   "wegui.config.hotkeys.name.openGui": "Open WE GUI Panel",
   "wegui.config.hotkeys.comment.openGui": "Open the WorldEdit command graphical panel",
+  "wegui.config.hotkeys.name.openRadialMenu": "Open Favorites Wheel",
+  "wegui.config.hotkeys.comment.openRadialMenu": "Open the radial menu for favorited commands",
 
   "wegui.hotkeys.category.generic": "WE GUI Generic Hotkeys",
   "wegui.hotkeys.category.toggles": "WE GUI Toggle Hotkeys",
@@ -85,6 +87,14 @@
   "wegui.command.search_hint": "Search commands, aliases, templates...",
   "wegui.command.favorites": "Favorites",
   "wegui.command.recent": "Recent",
+
+  "wegui.radial.empty": "No favorite commands",
+  "wegui.radial.title": "Favorites",
+
+  "wegui.config.command_panel.name.radialRadius": "Wheel Outer Radius",
+  "wegui.config.command_panel.comment.radialRadius": "Outer radius of the favorites wheel (pixels)",
+  "wegui.config.command_panel.name.radialInnerRadius": "Wheel Inner Radius",
+  "wegui.config.command_panel.comment.radialInnerRadius": "Inner radius of the favorites wheel (pixels)",
 
   "wegui.picker.title": "Select Item",
   "wegui.picker.button": "Pick",

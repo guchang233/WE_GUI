@@ -70,6 +70,8 @@
 
   "wegui.config.hotkeys.name.openGui": "打开 WE GUI 面板",
   "wegui.config.hotkeys.comment.openGui": "打开 WorldEdit 命令图形面板",
+  "wegui.config.hotkeys.name.openRadialMenu": "打开收藏轮盘",
+  "wegui.config.hotkeys.comment.openRadialMenu": "打开收藏命令的轮盘快捷菜单",
 
   "wegui.hotkeys.category.generic": "WE GUI 通用热键",
   "wegui.hotkeys.category.toggles": "WE GUI 开关热键",
@@ -85,6 +87,14 @@
   "wegui.command.search_hint": "搜索命令、别名、模板...",
   "wegui.command.favorites": "收藏",
   "wegui.command.recent": "最近使用",
+
+  "wegui.radial.empty": "没有收藏的命令",
+  "wegui.radial.title": "收藏命令",
+
+  "wegui.config.command_panel.name.radialRadius": "轮盘外圈半径",
+  "wegui.config.command_panel.comment.radialRadius": "收藏轮盘的外圈半径（像素）",
+  "wegui.config.command_panel.name.radialInnerRadius": "轮盘内圈半径",
+  "wegui.config.command_panel.comment.radialInnerRadius": "收藏轮盘的内圈半径（像素）",
 
   "wegui.picker.title": "选择物品",
   "wegui.picker.button": "选",
