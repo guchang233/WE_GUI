@@ -30,22 +30,15 @@ public final class PastePreviewRenderer {
     private PastePreviewRenderer() {}
 
     private static final float GHOST_ALPHA = 0.5f;
-    private static final int CLIPBOARD_CACHE_TICKS = 20;
-
-    @Nullable
-    private static Map<BlockPos, BlockState> cachedBlocks;
-    private static long cacheTick = -CLIPBOARD_CACHE_TICKS;
 
     public static void register() {
         WorldRenderEvents.BEFORE_TRANSLUCENT.register(context -> render(context));
     }
 
     /**
-     * 强制刷新剪贴板方块缓存。应在 //copy、//cut、//flip、//rotate 等修改剪贴板后调用。
+     * 已废弃，保留兼容旧调用。剪贴板现在每帧直接读取，无需手动刷新。
      */
     public static void invalidateCache() {
-        cachedBlocks = null;
-        cacheTick = -CLIPBOARD_CACHE_TICKS;
     }
 
     private static void render(WorldRenderContext context) {
@@ -104,17 +97,17 @@ public final class PastePreviewRenderer {
         if (Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) {
             Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc);
             if (blocks != null && !blocks.isEmpty()) {
-                BlockPos playerPos = BlockPos.containing(mc.player.getX(), mc.player.getY(), mc.player.getZ());
-                AABB pasteBox = computePasteBounds(blocks, playerPos);
+                BlockPos origin = AxeModeHandler.getPasteOrigin(mc.player);
+                AABB pasteBox = computePasteBounds(blocks, origin);
                 drawBox(buffer, matrix, pasteBox, 0.3f, 1.0f, 0.5f, 0.8f);
 
                 // 3) 真实材质半透明预览
-                renderGhostBlocks(mc, pose, context.consumers(), blocks, playerPos);
+                renderGhostBlocks(mc, pose, context.consumers(), blocks, origin);
 
                 // 4) 每个非空气方块单独边框（投影同款）
                 if (Configs.Generic.BLOCK_OUTLINE_ENABLED.getBooleanValue()) {
                     var c = Configs.PastePreview.BLOCK_OUTLINE_COLOR.getColor();
-                    renderBlockOutlines(buffer, matrix, blocks, playerPos, c.r, c.g, c.b, c.a);
+                    renderBlockOutlines(buffer, matrix, blocks, origin, c.r, c.g, c.b, c.a);
                 }
             }
         }
@@ -124,13 +117,7 @@ public final class PastePreviewRenderer {
 
     @Nullable
     private static Map<BlockPos, BlockState> getClipboardBlocksCached(Minecraft mc) {
-        long tick = mc.level.getGameTime();
-        if (cachedBlocks != null && tick - cacheTick < CLIPBOARD_CACHE_TICKS) {
-            return cachedBlocks;
-        }
-        cacheTick = tick;
-        cachedBlocks = WorldEditBridge.getClipboardBlocks(mc);
-        return cachedBlocks;
+        return WorldEditBridge.getClipboardBlocks(mc);
     }
 
     private static AABB computePasteBounds(Map<BlockPos, BlockState> blocks, BlockPos origin) {

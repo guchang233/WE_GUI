@@ -1,8 +1,12 @@
 package com.sow.wegui.client;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.WorldEdit;
+import com.sk89q.worldedit.fabric.FabricAdapter;
+import com.sk89q.worldedit.function.operation.Operation;
+import com.sk89q.worldedit.function.operation.Operations;
 import com.sk89q.worldedit.command.tool.InvalidToolBindException;
 import com.sk89q.worldedit.command.tool.SelectionWand;
 import com.sk89q.worldedit.extension.platform.Capability;
@@ -23,6 +27,8 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
@@ -300,6 +306,56 @@ public final class WorldEditBridge {
             WeGuiMod.LOGGER.debug("绑定选区魔杖失败: {}", e.toString());
         } catch (Throwable e) {
             WeGuiMod.LOGGER.debug("绑定选区魔杖时出错: {}", e.toString());
+        }
+    }
+
+    /**
+     * 当前是否为单人世界（本地服务端）。
+     */
+    public static boolean isLocalServer() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.getSingleplayerServer() != null;
+    }
+
+    /**
+     * 是否可以直接调用 WorldEdit API 在指定坐标粘贴（单人世界且 WE 已加载）。
+     */
+    public static boolean canUseDirectPaste() {
+        return WorldEditAdapter.isLoaded() && isLocalServer();
+    }
+
+    /**
+     * 在单人世界中直接调用 WorldEdit API，在 target 位置粘贴当前剪贴板。
+     * 会应用 holder 中已有的 //flip、//rotate 等变换。
+     */
+    public static boolean pasteClipboardAt(LocalPlayer player, BlockPos target) {
+        if (!canUseDirectPaste()) return false;
+        try {
+            MinecraftServer server = Minecraft.getInstance().getSingleplayerServer();
+            if (server == null) return false;
+
+            ServerLevel level = server.getLevel(player.level().dimension());
+            if (level == null) return false;
+
+            com.sk89q.worldedit.world.World weWorld = FabricAdapter.adapt(level);
+            LocalSession session = WorldEditAdapter.session(player);
+            if (session == null) return false;
+
+            ClipboardHolder holder = session.getClipboard();
+            if (holder == null) return false;
+
+            try (EditSession editSession = WorldEdit.getInstance().getEditSessionFactory().getEditSession(weWorld, -1)) {
+                Operation operation = holder.createPaste(editSession)
+                        .to(BlockVector3.at(target.getX(), target.getY(), target.getZ()))
+                        .ignoreAirBlocks(false)
+                        .build();
+                Operations.complete(operation);
+                session.remember(editSession);
+                return true;
+            }
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.error("Failed to paste clipboard at {}: {}", target, e);
+            return false;
         }
     }
 }

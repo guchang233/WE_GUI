@@ -1,8 +1,10 @@
 package com.sow.wegui.client;
 
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import com.sow.wegui.config.Configs;
+import com.sow.wegui.WeGuiMod;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -34,7 +36,8 @@ public final class AxeModeHandler {
 
     public enum AxeMode {
         NORMAL("wegui.mode.normal"),
-        EDIT_SELECTION("wegui.mode.edit_selection");
+        EDIT_SELECTION("wegui.mode.edit_selection"),
+        MOVE_PASTE_PREVIEW("wegui.mode.move_paste_preview");
 
         private final String translationKey;
 
@@ -57,6 +60,7 @@ public final class AxeModeHandler {
 
     private static AxeMode currentMode = AxeMode.NORMAL;
     private static LastModifiedCorner lastModified = LastModifiedCorner.NONE;
+    private static BlockPos pastePreviewOffset = BlockPos.ZERO;
 
     public static void register() {
         // 左键记录 pos1 为最后修改点，并根据开关显示提示
@@ -70,23 +74,66 @@ public final class AxeModeHandler {
             return InteractionResult.PASS;
         });
 
-        // 右键记录 pos2 为最后修改点，并根据开关显示提示
-        UseItemCallback.EVENT.register((player, level, hand) -> {
-            if (level.isClientSide() && hand == InteractionHand.MAIN_HAND && isHoldingConfiguredWand(player)) {
-                lastModified = LastModifiedCorner.POS2;
-                if (Configs.Generic.SELECTION_MESSAGE_ENABLED.getBooleanValue()) {
-                    BlockPos target = getLookingAtPos(player, level);
-                    if (target != null) {
-                        player.displayClientMessage(Component.translatable("wegui.message.pos2_set", formatPos(target)).withStyle(ChatFormatting.DARK_PURPLE), false);
-                    }
-                }
+        // 右键方块：移动 paste 预览模式下禁用 WorldEdit 默认 pos2 行为
+        UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
+            if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
+                return InteractionResult.PASS;
             }
+
+            if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
+                return InteractionResult.SUCCESS;
+            }
+
+            lastModified = LastModifiedCorner.POS2;
+            if (Configs.Generic.SELECTION_MESSAGE_ENABLED.getBooleanValue()) {
+                BlockPos target = hitResult.getBlockPos();
+                player.displayClientMessage(Component.translatable("wegui.message.pos2_set", formatPos(target)).withStyle(ChatFormatting.DARK_PURPLE), false);
+            }
+            return InteractionResult.PASS;
+        });
+
+        // 右键物品/空气：移动 paste 预览模式下禁用 WorldEdit 默认 pos2 行为
+        UseItemCallback.EVENT.register((player, level, hand) -> {
+            if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
+                return InteractionResult.PASS;
+            }
+
+            if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
+                return InteractionResult.SUCCESS;
+            }
+
             return InteractionResult.PASS;
         });
     }
 
     public static AxeMode getMode() {
         return currentMode;
+    }
+
+    public static BlockPos getPastePreviewOffset() {
+        return pastePreviewOffset;
+    }
+
+    public static void setPastePreviewOffset(BlockPos offset) {
+        pastePreviewOffset = offset;
+    }
+
+    public static void resetPastePreviewOffset() {
+        pastePreviewOffset = BlockPos.ZERO;
+    }
+
+    /**
+     * 获取当前 paste 预览的实际原点位置（玩家位置 + 手动偏移）。
+     */
+    public static BlockPos getPasteOrigin(LocalPlayer player) {
+        return BlockPos.containing(player.getX(), player.getY(), player.getZ()).offset(pastePreviewOffset);
+    }
+
+    /**
+     * 若存在非零粘贴偏移，则在预览原点执行 //paste；否则正常发送 //paste。
+     */
+    public static void executePasteAtPreview(LocalPlayer player) {
+        pasteAtPreview(player);
     }
 
     /**
@@ -110,12 +157,19 @@ public final class AxeModeHandler {
             return true;
         }
 
-        // alt：仅在编辑选区模式下移动选点
-        if (currentMode != AxeMode.EDIT_SELECTION) {
-            player.displayClientMessage(Component.translatable("wegui.message.need_edit_mode").withStyle(ChatFormatting.RED), true);
-            return true;
+        if (currentMode == AxeMode.EDIT_SELECTION) {
+            return handleEditSelectionScroll(player, mc, scrollDelta);
         }
 
+        if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
+            return handleMovePastePreviewScroll(player, scrollDelta);
+        }
+
+        player.displayClientMessage(Component.translatable("wegui.message.need_edit_or_move_mode").withStyle(ChatFormatting.RED), true);
+        return true;
+    }
+
+    private static boolean handleEditSelectionScroll(LocalPlayer player, Minecraft mc, double scrollDelta) {
         WorldEditBridge.PartialCornerPositions corners = WorldEditBridge.getPartialSelectionCorners(mc);
         if (corners == null) {
             player.displayClientMessage(Component.translatable("wegui.message.no_selection").withStyle(ChatFormatting.RED), true);
@@ -152,9 +206,36 @@ public final class AxeModeHandler {
         return true;
     }
 
+    private static boolean handleMovePastePreviewScroll(LocalPlayer player, double scrollDelta) {
+        if (!hasClipboard() || !WorldEditBridge.canUseDirectPaste()) {
+            player.displayClientMessage(Component.translatable("wegui.message.no_clipboard_or_multiplayer").withStyle(ChatFormatting.RED), true);
+            resetPastePreviewOffset();
+            return true;
+        }
+
+        int amount = scrollDelta > 0 ? 1 : -1;
+        Direction direction = getLookDirection(player);
+        if (direction == null) {
+            return true;
+        }
+
+        pastePreviewOffset = pastePreviewOffset.relative(direction, amount);
+        player.displayClientMessage(Component.translatable("wegui.message.moved_paste_preview",
+                formatPos(pastePreviewOffset)).withStyle(ChatFormatting.GREEN), true);
+        return true;
+    }
+
     private static void cycleMode(LocalPlayer player) {
         AxeMode[] values = AxeMode.values();
-        currentMode = values[(currentMode.ordinal() + 1) % values.length];
+        AxeMode next = values[(currentMode.ordinal() + 1) % values.length];
+
+        // 多人服务器跳过移动粘贴预览模式
+        if (next == AxeMode.MOVE_PASTE_PREVIEW && !WorldEditBridge.canUseDirectPaste()) {
+            player.displayClientMessage(Component.translatable("wegui.message.move_paste_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
+            currentMode = AxeMode.NORMAL;
+        } else {
+            currentMode = next;
+        }
         player.displayClientMessage(Component.translatable("wegui.message.mode_changed", currentMode.getDisplayName()).withStyle(ChatFormatting.GREEN), true);
     }
 
@@ -210,6 +291,47 @@ public final class AxeModeHandler {
             return result.getBlockPos();
         }
         return null;
+    }
+
+    private static boolean hasClipboard() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.player != null && WorldEditBridge.getClipboardBounds(mc) != null;
+    }
+
+    /**
+     * 在预览原点执行粘贴。单人世界且存在非零偏移时直接调用 WorldEdit API，避免命令异步导致位置错误；
+     * 无偏移或无法直接粘贴时退回到普通 //paste 命令。
+     */
+    private static void pasteAtPreview(LocalPlayer player) {
+        WeGuiMod.LOGGER.info("[WE GUI] pasteAtPreview 被调用, offset={}, canDirect={}",
+                pastePreviewOffset, WorldEditBridge.canUseDirectPaste());
+
+        if (pastePreviewOffset.equals(BlockPos.ZERO)) {
+            WeGuiMod.LOGGER.info("[WE GUI] offset 为零，走普通 //paste");
+            sendNormalPasteCommand(player);
+            return;
+        }
+
+        if (!WorldEditBridge.canUseDirectPaste()) {
+            WeGuiMod.LOGGER.info("[WE GUI] 无法直接粘贴，提示多人服务器");
+            player.displayClientMessage(Component.translatable("wegui.message.move_paste_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
+            return;
+        }
+
+        BlockPos origin = getPasteOrigin(player);
+        WeGuiMod.LOGGER.info("[WE GUI] 调用 API 粘贴到 {}", origin);
+        boolean success = WorldEditBridge.pasteClipboardAt(player, origin);
+        if (success) {
+            resetPastePreviewOffset();
+            player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(origin)).withStyle(ChatFormatting.GREEN), true);
+        } else {
+            player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
+        }
+    }
+
+    private static void sendNormalPasteCommand(LocalPlayer player) {
+        // WorldEdit 的 //paste 在 Brigadier 中注册为 /paste，需要保留前导 /
+        CommandSender.sendRawCommand("/paste");
     }
 
     private static String formatPos(BlockPos pos) {

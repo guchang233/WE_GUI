@@ -42,5 +42,8 @@ public class WeGuiClient implements ClientModInitializer {
         StatusBar.register();
         PastePreviewRenderer.register();
         AxeModeHandler.register();
+
+        // 触发 CommandSender 类初始化，注册聊天命令拦截器
+        CommandSender.init();
     }
 }

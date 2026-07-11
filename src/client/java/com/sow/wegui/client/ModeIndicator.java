@@ -28,10 +28,7 @@ public final class ModeIndicator {
         if (!AxeModeHandler.isHoldingConfiguredWand(mc.player)) return;
 
         AxeModeHandler.AxeMode mode = AxeModeHandler.getMode();
-        String modeKey = mode == AxeModeHandler.AxeMode.NORMAL
-                ? "wegui.mode.normal"
-                : "wegui.mode.edit_selection";
-        String modeName = Component.translatable(modeKey).getString();
+        String modeName = Component.translatable(mode.getTranslationKey()).getString();
 
         String toolName = mc.player.getMainHandItem().getHoverName().getString();
         if (toolName.isBlank()) {
@@ -42,11 +39,12 @@ public final class ModeIndicator {
         lines.add(Component.translatable("wegui.mode.title").getString());
         lines.add(Component.translatable("wegui.mode.tool", toolName).getString());
         lines.add(Component.translatable("wegui.mode.current", modeName).getString());
-        if (mode == AxeModeHandler.AxeMode.EDIT_SELECTION) {
-            lines.add(Component.translatable("wegui.mode.hint.edit").getString());
-        } else {
-            lines.add(Component.translatable("wegui.mode.hint.normal").getString());
-        }
+        String hintKey = switch (mode) {
+            case EDIT_SELECTION -> "wegui.mode.hint.edit";
+            case MOVE_PASTE_PREVIEW -> "wegui.mode.hint.move_paste_preview";
+            default -> "wegui.mode.hint.normal";
+        };
+        lines.add(Component.translatable(hintKey).getString());
 
         int maxW = 0;
         for (String line : lines) {
