@@ -27,7 +27,8 @@ Provides a GUI panel and 3D rendering of selections (similar to[Litematica](http
 ---
 # Preview
 
-![选区渲染预览](https://github.com/user-attachments/assets/1b2733e2-fb77-42eb-94ac-bd70d6d9b1a8)
+<img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/1b2733e2-fb77-42eb-94ac-bd70d6d9b1a8" />
+
 ⬆️After `//copy`, you can see where the structure will appear the next time you `//paste`.If a `//rotate` or `//flip` operation is performed, the rendering will be updated accordingly.
 
 ---
