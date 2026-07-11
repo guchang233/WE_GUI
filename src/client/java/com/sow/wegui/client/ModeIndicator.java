@@ -28,6 +28,8 @@ public final class ModeIndicator {
         if (!AxeModeHandler.isHoldingConfiguredWand(mc.player)) return;
 
         AxeModeHandler.AxeMode mode = AxeModeHandler.getMode();
+        AxeModeHandler.AxeMode[] allModes = AxeModeHandler.AxeMode.values();
+        String indicator = "[" + (mode.ordinal() + 1) + "/" + allModes.length + "]";
         String modeName = Component.translatable(mode.getTranslationKey()).getString();
 
         String toolName = mc.player.getMainHandItem().getHoverName().getString();
@@ -38,7 +40,7 @@ public final class ModeIndicator {
         List<String> lines = new ArrayList<>();
         lines.add(Component.translatable("wegui.mode.title").getString());
         lines.add(Component.translatable("wegui.mode.tool", toolName).getString());
-        lines.add(Component.translatable("wegui.mode.current", modeName).getString());
+        lines.add(Component.translatable("wegui.mode.current", indicator + " " + modeName).getString());
         String hintKey = switch (mode) {
             case EDIT_SELECTION -> "wegui.mode.hint.edit";
             case MOVE_PASTE_PREVIEW -> "wegui.mode.hint.move_paste_preview";

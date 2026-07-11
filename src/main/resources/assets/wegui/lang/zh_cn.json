@@ -130,7 +130,7 @@
   "wegui.mode.unknown_tool": "未知工具",
   "wegui.mode.hint.normal": "Ctrl+滚轮 切换模式",
   "wegui.mode.hint.edit": "Alt+滚轮 移动选点",
-  "wegui.mode.hint.move_paste_preview": "Alt+滚轮 移动预览位置，右键粘贴",
+  "wegui.mode.hint.move_paste_preview": "Alt+滚轮 移动预览位置",
 
   "wegui.status.no_worldedit": "WorldEdit 未加载",
   "wegui.status.no_selection": "无选区",
@@ -149,7 +149,7 @@
   "wegui.message.paste_at_preview": "[WE GUI] 在 %s 执行粘贴",
   "wegui.message.no_clipboard": "[WE GUI] 没有可用的剪贴板",
   "wegui.message.need_edit_or_move_mode": "[WE GUI] 请先切换到编辑选区或移动粘贴位置模式",
-  "wegui.message.mode_changed": "[WE GUI] 工具模式: %s",
+  "wegui.message.mode_changed": "[WE GUI] 工具模式: %s%s",
   "wegui.message.move_paste_multiplayer_disabled": "[WE GUI] 多人服务器不支持移动粘贴位置模式",
   "wegui.message.no_clipboard_or_multiplayer": "[WE GUI] 多人服务器或无剪贴板，无法移动预览位置",
   "wegui.message.paste_success": "[WE GUI] 已在 %s 粘贴剪贴板内容",

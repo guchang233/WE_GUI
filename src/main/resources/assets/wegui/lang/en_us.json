@@ -130,7 +130,7 @@
   "wegui.mode.unknown_tool": "Unknown Tool",
   "wegui.mode.hint.normal": "Ctrl+Scroll to switch mode",
   "wegui.mode.hint.edit": "Alt+Scroll to move corner",
-  "wegui.mode.hint.move_paste_preview": "Alt+Scroll to move preview, right-click to paste",
+  "wegui.mode.hint.move_paste_preview": "Alt+Scroll to move preview",
 
   "wegui.status.no_worldedit": "WorldEdit not loaded",
   "wegui.status.no_selection": "No selection",
@@ -149,7 +149,7 @@
   "wegui.message.paste_at_preview": "[WE GUI] Pasting at %s",
   "wegui.message.no_clipboard": "[WE GUI] No clipboard available",
   "wegui.message.need_edit_or_move_mode": "[WE GUI] Switch to Edit Selection or Move Paste Position mode first",
-  "wegui.message.mode_changed": "[WE GUI] Tool mode: %s",
+  "wegui.message.mode_changed": "[WE GUI] Tool mode: %s%s",
   "wegui.message.move_paste_multiplayer_disabled": "[WE GUI] Move-paste mode is disabled on multiplayer servers",
   "wegui.message.no_clipboard_or_multiplayer": "[WE GUI] Cannot move preview: no clipboard or on a multiplayer server",
   "wegui.message.paste_success": "[WE GUI] Clipboard pasted at %s",

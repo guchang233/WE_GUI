@@ -153,7 +153,7 @@ public final class AxeModeHandler {
         if (!ctrl && !alt) return false;
 
         if (ctrl) {
-            cycleMode(player);
+            cycleMode(player, scrollDelta > 0);
             return true;
         }
 
@@ -225,18 +225,26 @@ public final class AxeModeHandler {
         return true;
     }
 
-    private static void cycleMode(LocalPlayer player) {
+    private static void cycleMode(LocalPlayer player, boolean forward) {
         AxeMode[] values = AxeMode.values();
-        AxeMode next = values[(currentMode.ordinal() + 1) % values.length];
+        int count = values.length;
+        int dir = forward ? 1 : -1;
+        int nextOrdinal = currentMode.ordinal();
 
-        // 多人服务器跳过移动粘贴预览模式
-        if (next == AxeMode.MOVE_PASTE_PREVIEW && !WorldEditBridge.canUseDirectPaste()) {
-            player.displayClientMessage(Component.translatable("wegui.message.move_paste_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
-            currentMode = AxeMode.NORMAL;
-        } else {
-            currentMode = next;
+        // 最多循环 count 次，跳过不可用的模式
+        for (int i = 0; i < count; i++) {
+            nextOrdinal = (nextOrdinal + dir + count) % count;
+            AxeMode candidate = values[nextOrdinal];
+            if (candidate == AxeMode.MOVE_PASTE_PREVIEW && !WorldEditBridge.canUseDirectPaste()) {
+                continue;
+            }
+            currentMode = candidate;
+            break;
         }
-        player.displayClientMessage(Component.translatable("wegui.message.mode_changed", currentMode.getDisplayName()).withStyle(ChatFormatting.GREEN), true);
+
+        player.displayClientMessage(Component.translatable("wegui.message.mode_changed",
+                Component.literal("[" + (currentMode.ordinal() + 1) + "/" + count + "] "),
+                currentMode.getDisplayName()).withStyle(ChatFormatting.GREEN), true);
     }
 
     public static boolean isHoldingConfiguredWand(Player player) {
@@ -322,7 +330,6 @@ public final class AxeModeHandler {
         WeGuiMod.LOGGER.info("[WE GUI] 调用 API 粘贴到 {}", origin);
         boolean success = WorldEditBridge.pasteClipboardAt(player, origin);
         if (success) {
-            resetPastePreviewOffset();
             player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(origin)).withStyle(ChatFormatting.GREEN), true);
         } else {
             player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
