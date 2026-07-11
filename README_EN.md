@@ -32,8 +32,15 @@ Provides a GUI panel and 3D rendering of selections (similar to[Litematica](http
 
 ---
 
-![GUI预览](https://github.com/user-attachments/assets/b6bd67a1-0ad9-46be-ae4a-434ae58fa134)
-⬆️The GUI style will be optimized later.
+<img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/d04eaae7-dae6-48ae-acf4-f704e0dc3af3" />
+
+⬆️After `//copy`, you can use Ctrl + the scroll wheel to switch to ‘Move Paste Position’ mode, allowing you to move the structure from the clipboard in the same way as the Litematica
+
+---
+
+<img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/b1d6cf64-7c16-4f68-aa59-7e42620a12dc" />
+
+⬆️The GUI.
 
 ---
 [YouTube](https://www.youtube-nocookie.com/embed/qq780XHGRP8)
