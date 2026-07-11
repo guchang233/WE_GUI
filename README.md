@@ -35,8 +35,6 @@
 
 ---
 
-![移动预览图]()
-
 <img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/d04eaae7-dae6-48ae-acf4-f704e0dc3af3" />
 
 ⬆️在执行 `//copy` 之后，你可以使用ctrl+滚轮切换模式至“移动粘贴位置”模式，让你可以像投影模组的原理图放置模式一样移动剪切板中的结构。
