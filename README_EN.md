@@ -44,6 +44,14 @@ Provides a GUI panel and 3D rendering of selections (similar to[Litematica](http
 ⬆️The GUI.
 
 ---
+
+
+<img width="600" height="450" alt="QQ20260712-012228" src="https://github.com/user-attachments/assets/9d1b1eea-3f0d-4558-84da-436b30569ee4" />
+
+⬆️Once the GUI is open, click the ⭐️ button to the left of a command to add it to your favourites. Open the wheel to quickly access your favourite commands. The wheel displays a maximum of six items per page; if there are more, a new page will be added.
+
+
+---
 [YouTube](https://www.youtube-nocookie.com/embed/qq780XHGRP8)
 
 # About
