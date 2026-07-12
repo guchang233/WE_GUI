@@ -46,6 +46,18 @@
   "wegui.config.paste_preview.comment.selectionPos2Color": "pos2 角点框的颜色",
   "wegui.config.paste_preview.name.blockOutlineColor": "方块边框颜色",
   "wegui.config.paste_preview.comment.blockOutlineColor": "粘贴预览中单个方块边框的颜色",
+  "wegui.config.paste_preview.name.boxSideColor": "粘贴外框颜色",
+  "wegui.config.paste_preview.comment.boxSideColor": "粘贴包围盒边线与半透明面的基础颜色",
+  "wegui.config.paste_preview.name.ghostBlockAlpha": "幽灵方块透明度",
+  "wegui.config.paste_preview.comment.ghostBlockAlpha": "粘贴预览中幽灵方块的透明度（0.0 = 不可见，1.0 = 不透明）",
+  "wegui.config.paste_preview.name.boxSideAlpha": "粘贴外框面透明度",
+  "wegui.config.paste_preview.comment.boxSideAlpha": "粘贴包围盒半透明面的透明度（0.0 = 隐藏，1.0 = 不透明）",
+  "wegui.config.paste_preview.name.ghostRenderDistance": "幽灵渲染距离",
+  "wegui.config.paste_preview.comment.ghostRenderDistance": "渲染幽灵方块与方块边框的最大方块距离（按区块分组剔除）",
+  "wegui.config.paste_preview.name.pastePlacementMode": "放置模式",
+  "wegui.config.paste_preview.comment.pastePlacementMode": "随玩家移动：预览跟随玩家位置；固定：将预览固定在当前位置并真正执行 WE paste（类似投影模组放置原理图），切换回随玩家移动可恢复预览",
+  "wegui.config.paste_placement_mode.follow_player": "随玩家移动",
+  "wegui.config.paste_placement_mode.fixed": "固定",
 
   "wegui.config.mode_indicator.name.modeIndicatorEnabled": "显示模式栏",
   "wegui.config.mode_indicator.comment.modeIndicatorEnabled": "在左下角显示当前 WE 工具模式",
@@ -163,5 +175,8 @@
   "wegui.message.move_paste_multiplayer_disabled": "[WE GUI] 多人服务器不支持移动粘贴位置模式",
   "wegui.message.no_clipboard_or_multiplayer": "[WE GUI] 多人服务器或无剪贴板，无法移动预览位置",
   "wegui.message.paste_success": "[WE GUI] 已在 %s 粘贴剪贴板内容",
-  "wegui.message.paste_failed": "[WE GUI] 粘贴失败，请检查日志"
+  "wegui.message.paste_failed": "[WE GUI] 粘贴失败，请检查日志",
+  "wegui.message.fixed_mode_multiplayer_disabled": "[WE GUI] 多人服务器不支持固定模式",
+  "wegui.message.fixed_mode_no_clipboard": "[WE GUI] 无剪贴板，无法固定",
+  "wegui.message.fixed_mode_enabled": "[WE GUI] 已固定预览位置，输入 //paste 在此位置粘贴"
 }

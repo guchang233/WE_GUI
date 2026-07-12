@@ -4,6 +4,7 @@ import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import com.sow.wegui.config.Configs;
+import com.sow.wegui.config.PastePlacementMode;
 import com.sow.wegui.WeGuiMod;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -317,10 +318,43 @@ public final class AxeModeHandler {
     }
 
     /**
-     * 在预览原点执行粘贴。单人世界且存在非零偏移时直接调用 WorldEdit API，避免命令异步导致位置错误；
-     * 无偏移或无法直接粘贴时退回到普通 //paste 命令。
+     * 在预览原点执行粘贴。
+     * - 固定模式：始终在 fixedOrigin 执行 paste，与渲染位置同步
+     * - 随玩家移动模式：单人世界且存在非零偏移时直接调用 WorldEdit API；
+     *   无偏移或无法直接粘贴时退回到普通 //paste 命令。
      */
     private static void pasteAtPreview(LocalPlayer player) {
+        // 直接读配置判断模式，不依赖渲染线程的 lastMode
+        PastePlacementMode mode = (PastePlacementMode) Configs.PastePreview.PASTE_PLACEMENT_MODE.getOptionListValue();
+
+        if (mode == PastePlacementMode.FIXED) {
+            // 前置检查：单人世界才能直接 paste
+            if (!WorldEditBridge.canUseDirectPaste()) {
+                WeGuiMod.LOGGER.warn("[WE GUI] 固定模式 paste 失败：非单人世界");
+                player.displayClientMessage(Component.translatable("wegui.message.fixed_mode_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
+                Configs.PastePreview.PASTE_PLACEMENT_MODE.setOptionListValue(PastePlacementMode.FOLLOW_PLAYER);
+                return;
+            }
+
+            BlockPos fixedOrigin = PastePreviewRenderer.getFixedOrigin();
+            if (fixedOrigin == null) {
+                // 渲染线程尚未初始化 fixedOrigin，使用当前预览位置回填
+                fixedOrigin = getPasteOrigin(player);
+                PastePreviewRenderer.setFixedOrigin(fixedOrigin);
+                WeGuiMod.LOGGER.info("[WE GUI] fixedOrigin 未初始化，回填为当前预览位置 {}", fixedOrigin);
+            }
+
+            WeGuiMod.LOGGER.info("[WE GUI] 固定模式 paste 到 {}", fixedOrigin);
+            boolean success = WorldEditBridge.pasteClipboardAt(player, fixedOrigin);
+            if (success) {
+                player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(fixedOrigin)).withStyle(ChatFormatting.GREEN), true);
+            } else {
+                player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
+            }
+            return;
+        }
+
+        // FOLLOW_PLAYER 模式
         WeGuiMod.LOGGER.info("[WE GUI] pasteAtPreview 被调用, offset={}, canDirect={}",
                 pastePreviewOffset, WorldEditBridge.canUseDirectPaste());
 

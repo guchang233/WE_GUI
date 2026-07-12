@@ -11,6 +11,7 @@ import fi.dy.masa.malilib.config.IConfigValue;
 import fi.dy.masa.malilib.config.options.ConfigBoolean;
 import fi.dy.masa.malilib.config.options.ConfigBooleanHotkeyed;
 import fi.dy.masa.malilib.config.options.ConfigColor;
+import fi.dy.masa.malilib.config.options.ConfigDouble;
 import fi.dy.masa.malilib.config.options.ConfigHotkey;
 import fi.dy.masa.malilib.config.options.ConfigInteger;
 import fi.dy.masa.malilib.config.options.ConfigOptionList;
@@ -83,16 +84,26 @@ public class Configs implements IConfigHandler {
     }
 
     public static class PastePreview {
+        public static final ConfigOptionList PASTE_PLACEMENT_MODE = new ConfigOptionList("pastePlacementMode", PastePlacementMode.FOLLOW_PLAYER).apply(PASTE_PREVIEW_KEY);
         public static final ConfigColor SELECTION_BOX_COLOR = new ConfigColor("selectionBoxColor", new Color4f(1.0f, 0.82f, 0.0f, 1.0f)).apply(PASTE_PREVIEW_KEY);
         public static final ConfigColor SELECTION_POS1_COLOR = new ConfigColor("selectionPos1Color", new Color4f(1.0f, 0.06f, 0.06f, 1.0f)).apply(PASTE_PREVIEW_KEY);
         public static final ConfigColor SELECTION_POS2_COLOR = new ConfigColor("selectionPos2Color", new Color4f(0.06f, 0.06f, 1.0f, 1.0f)).apply(PASTE_PREVIEW_KEY);
         public static final ConfigColor BLOCK_OUTLINE_COLOR = new ConfigColor("blockOutlineColor", new Color4f(0.0f, 1.0f, 1.0f, 1.0f)).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigColor BOX_SIDE_COLOR = new ConfigColor("boxSideColor", new Color4f(0.0f, 1.0f, 0.5f, 0.2f)).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigDouble GHOST_BLOCK_ALPHA = new ConfigDouble("ghostBlockAlpha", 0.5, 0.0, 1.0).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigDouble BOX_SIDE_ALPHA = new ConfigDouble("boxSideAlpha", 0.2, 0.0, 1.0).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigInteger GHOST_RENDER_DISTANCE = new ConfigInteger("ghostRenderDistance", 64, 16, 256).apply(PASTE_PREVIEW_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                PASTE_PLACEMENT_MODE,
                 SELECTION_BOX_COLOR,
                 SELECTION_POS1_COLOR,
                 SELECTION_POS2_COLOR,
-                BLOCK_OUTLINE_COLOR
+                BLOCK_OUTLINE_COLOR,
+                BOX_SIDE_COLOR,
+                GHOST_BLOCK_ALPHA,
+                BOX_SIDE_ALPHA,
+                GHOST_RENDER_DISTANCE
         );
     }
 

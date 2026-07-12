@@ -46,6 +46,18 @@
   "wegui.config.paste_preview.comment.selectionPos2Color": "Color of the pos2 corner box",
   "wegui.config.paste_preview.name.blockOutlineColor": "Block Outline Color",
   "wegui.config.paste_preview.comment.blockOutlineColor": "Color of individual block outlines in paste preview",
+  "wegui.config.paste_preview.name.boxSideColor": "Paste Box Side Color",
+  "wegui.config.paste_preview.comment.boxSideColor": "Base color of the paste bounding box outline and translucent sides",
+  "wegui.config.paste_preview.name.ghostBlockAlpha": "Ghost Block Alpha",
+  "wegui.config.paste_preview.comment.ghostBlockAlpha": "Transparency of ghost blocks in paste preview (0.0 = invisible, 1.0 = opaque)",
+  "wegui.config.paste_preview.name.boxSideAlpha": "Paste Box Side Alpha",
+  "wegui.config.paste_preview.comment.boxSideAlpha": "Transparency of the translucent side faces on the paste bounding box (0.0 = hidden, 1.0 = opaque)",
+  "wegui.config.paste_preview.name.ghostRenderDistance": "Ghost Render Distance",
+  "wegui.config.paste_preview.comment.ghostRenderDistance": "Maximum block distance for rendering ghost blocks and block outlines (chunk-based culling)",
+  "wegui.config.paste_preview.name.pastePlacementMode": "Placement Mode",
+  "wegui.config.paste_preview.comment.pastePlacementMode": "Follow Player: preview follows the player; Fixed: pins the preview at the current position and performs a real WE paste (like a schematic mod placing a schematic). Switch back to Follow Player to resume previewing",
+  "wegui.config.paste_placement_mode.follow_player": "Follow Player",
+  "wegui.config.paste_placement_mode.fixed": "Fixed",
 
   "wegui.config.mode_indicator.name.modeIndicatorEnabled": "Show Mode Indicator",
   "wegui.config.mode_indicator.comment.modeIndicatorEnabled": "Display current WE tool mode at the bottom-left",
@@ -163,5 +175,8 @@
   "wegui.message.move_paste_multiplayer_disabled": "[WE GUI] Move-paste mode is disabled on multiplayer servers",
   "wegui.message.no_clipboard_or_multiplayer": "[WE GUI] Cannot move preview: no clipboard or on a multiplayer server",
   "wegui.message.paste_success": "[WE GUI] Clipboard pasted at %s",
-  "wegui.message.paste_failed": "[WE GUI] Paste failed, check logs"
+  "wegui.message.paste_failed": "[WE GUI] Paste failed, check logs",
+  "wegui.message.fixed_mode_multiplayer_disabled": "[WE GUI] Fixed mode is disabled on multiplayer servers",
+  "wegui.message.fixed_mode_no_clipboard": "[WE GUI] No clipboard available, cannot fix",
+  "wegui.message.fixed_mode_enabled": "[WE GUI] Preview pinned. Type //paste to place here"
 }

@@ -1,0 +1,29 @@
+﻿Compiled from "RenderSetup.java"
+public class net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder {
+  private final com.mojang.blaze3d.pipeline.RenderPipeline pipeline;
+  private boolean useLightmap;
+  private boolean useOverlay;
+  private net.minecraft.client.renderer.rendertype.LayeringTransform layeringTransform;
+  private net.minecraft.client.renderer.rendertype.OutputTarget outputTarget;
+  private net.minecraft.client.renderer.rendertype.TextureTransform textureTransform;
+  private boolean affectsCrumbling;
+  private boolean sortOnUpload;
+  private int bufferSize;
+  private net.minecraft.client.renderer.rendertype.RenderSetup$OutlineProperty outlineProperty;
+  private final java.util.Map<java.lang.String, net.minecraft.client.renderer.rendertype.RenderSetup$TextureBinding> textures;
+  net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder(com.mojang.blaze3d.pipeline.RenderPipeline);
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder withTexture(java.lang.String, net.minecraft.resources.Identifier);
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder withTexture(java.lang.String, net.minecraft.resources.Identifier, java.util.function.Supplier<com.mojang.blaze3d.textures.GpuSampler>);
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder useLightmap();
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder useOverlay();
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder affectsCrumbling();
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder sortOnUpload();
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder bufferSize(int);
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder setLayeringTransform(net.minecraft.client.renderer.rendertype.LayeringTransform);
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder setOutputTarget(net.minecraft.client.renderer.rendertype.OutputTarget);
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder setTextureTransform(net.minecraft.client.renderer.rendertype.TextureTransform);
+  public net.minecraft.client.renderer.rendertype.RenderSetup$RenderSetupBuilder setOutline(net.minecraft.client.renderer.rendertype.RenderSetup$OutlineProperty);
+  public net.minecraft.client.renderer.rendertype.RenderSetup createRenderSetup();
+  private static com.mojang.blaze3d.textures.GpuSampler method_76561(java.util.function.Supplier);
+  private static com.mojang.blaze3d.textures.GpuSampler method_76562();
+}

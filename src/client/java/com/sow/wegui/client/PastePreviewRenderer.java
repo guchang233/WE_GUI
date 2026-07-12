@@ -1,143 +1,286 @@
 package com.sow.wegui.client;
 
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.shaders.UniformType;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.session.ClipboardHolder;
+import com.sow.wegui.WeGuiMod;
+import com.sow.wegui.client.mixin.RenderTypeAccessor;
 import com.sow.wegui.config.Configs;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import com.sow.wegui.config.PastePlacementMode;
+import fi.dy.masa.malilib.interfaces.IRenderer;
+import fi.dy.masa.malilib.render.MaLiLibPipelines;
+import fi.dy.masa.malilib.render.RenderContext;
+import fi.dy.masa.malilib.render.RenderUtils;
+import fi.dy.masa.malilib.util.data.Color4f;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.client.renderer.rendertype.OutputTarget;
+import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
-import org.jetbrains.annotations.Nullable;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
- * copy 后在世界中渲染 paste 位置预览：保留线框，并叠加半透明真实方块材质。
+ * paste 位置预览渲染器，借鉴 litematica 风格。
+ *
+ * 渲染分层：
+ * ① 选区大框 + pos1/pos2 角点框 — malilib RenderUtils.renderAreaOutlineNoCorners + renderBlockOutline
+ * ② paste 整体外框 + 半透明面   — malilib RenderUtils.renderAreaOutlineNoCorners + renderAreaSides
+ * ③ ghost blocks 真实材质       — BlockRenderDispatcher.renderSingleBlock + chunk 分组距离剔除
+ * ④ 每方块边框（可选）          — malilib RenderContext + drawBlockBoundingBoxOutlinesBatchedLinesSimple
+ *
+ * 注册方式：
+ * - 层 ③ 在 WorldRenderEvents.BEFORE_TRANSLUCENT 中渲染（需要 translucent buffer 正确时序）
+ * - 层 ①②④ 通过 malilib IRenderer.onRenderWorldLastAdvanced 渲染
  */
-public final class PastePreviewRenderer {
+public final class PastePreviewRenderer implements IRenderer {
+
+    private static final PastePreviewRenderer INSTANCE = new PastePreviewRenderer();
+
+    // ---- 自定义 ghost block 渲染管线 ----
+    // 基于 RenderPipelines.TRANSLUCENT_MOVING_BLOCK，但禁用背面剔除（cull=false），
+    // 并使用 MAIN_TARGET 而非 ITEM_ENTITY_TARGET，确保半透明 ghost block 的所有面都被渲染。
+    // 原 translucentMovingBlock 的 cull=true 会导致半透明方块的背面被剔除，
+    // 透过半透明前面看到"空"的内部，视觉上表现为"部分顶点渲染不完整"。
+    private static final RenderPipeline.Snippet MATRICES_PROJECTION_SNIPPET =
+            RenderPipeline.builder()
+                    .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+                    .withUniform("Projection", UniformType.UNIFORM_BUFFER)
+                    .buildSnippet();
+
+    private static final RenderPipeline GHOST_BLOCK_PIPELINE = RenderPipeline.builder(MATRICES_PROJECTION_SNIPPET)
+            .withLocation("wegui/pipeline/ghost_block")
+            .withVertexShader("core/rendertype_translucent_moving_block")
+            .withFragmentShader("core/rendertype_translucent_moving_block")
+            .withSampler("Sampler0")
+            .withSampler("Sampler2")
+            .withBlend(BlendFunction.TRANSLUCENT)
+            .withVertexFormat(DefaultVertexFormat.BLOCK, VertexFormat.Mode.QUADS)
+            .withCull(false)
+            .build();
+
+    private static final RenderType GHOST_BLOCK_TYPE = RenderTypeAccessor.wegui$create(
+            "wegui:ghost_block",
+            RenderSetup.builder(GHOST_BLOCK_PIPELINE)
+                    .useLightmap()
+                    .withTexture("Sampler0", TextureAtlas.LOCATION_BLOCKS)
+                    .setOutputTarget(OutputTarget.MAIN_TARGET)
+                    .sortOnUpload()
+                    .bufferSize(786432)
+                    .createRenderSetup());
+
+    // ---- clipboard 缓存 ----
+    private Map<BlockPos, BlockState> cachedBlocks;
+    private AABB cachedPasteBox;
+    private BlockPos cachedPasteOrigin;
+    private Object cachedClipboardHolder;
+    private Object cachedTransform;
+
+    // ---- chunk 分组缓存（用于 frustum / distance 剔除）----
+    private final ClipboardChunkCache chunkCache = new ClipboardChunkCache();
+    private boolean chunkCacheDirty = true;
+
+    // ---- 固定放置模式 ----
+    @Nullable
+    private BlockPos fixedOrigin = null;
+    private PastePlacementMode lastMode = PastePlacementMode.FOLLOW_PLAYER;
+
     private PastePreviewRenderer() {}
 
-    private static final float GHOST_ALPHA = 0.5f;
-    private static final double GHOST_RENDER_DISTANCE_SQ = 64.0 * 64.0;
-    private static final int GHOST_RENDER_LIMIT = 512;
-
-    private static Map<BlockPos, BlockState> cachedBlocks;
-    private static AABB cachedPasteBox;
-    private static BlockPos cachedPasteOrigin;
-    private static Object cachedClipboardHolder; // ClipboardHolder 引用
-    private static Object cachedTransform; // Transform 引用
-    private static WorldEditBridge.Bounds cachedSelectionBounds;
-    private static WorldEditBridge.PartialCornerPositions cachedPartialCorners;
-    private static int selectionCacheTick = 0;
-    private static final int SELECTION_CACHE_INTERVAL = 10;
-
-    public static void register() {
-        WorldRenderEvents.BEFORE_TRANSLUCENT.register(context -> render(context));
-        ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-            selectionCacheTick++;
-            if (selectionCacheTick >= SELECTION_CACHE_INTERVAL) {
-                selectionCacheTick = 0;
-                cachedSelectionBounds = null;
-                cachedPartialCorners = null;
-            }
-        });
+    public static PastePreviewRenderer getInstance() {
+        return INSTANCE;
     }
 
     /**
-     * 已废弃，保留兼容旧调用。剪贴板现在每帧直接读取，无需手动刷新。
+     * 注册渲染器：
+     * - ghost blocks（层③）注册到 BEFORE_TRANSLUCENT（translucent buffer 时序需要）
+     * - overlays（层①②④）通过返回 getInstance() 由调用方注册到 malilib RenderEventHandler
      */
-    public static void invalidateCache() {
+    public static void register() {
+        WorldRenderEvents.BEFORE_TRANSLUCENT.register(PastePreviewRenderer::renderGhostBlocksHook);
     }
 
-    private static void render(WorldRenderContext context) {
-        try {
-            renderInternal(context);
-        } catch (Throwable e) {
-            com.sow.wegui.WeGuiMod.LOGGER.debug("WorldEdit GUI 渲染预览时出错: {}", e.toString());
+    /** 旧 API 兼容：现在每帧直接读取剪贴板，无需手动刷新 */
+    public static void invalidateCache() {
+        INSTANCE.chunkCacheDirty = true;
+    }
+
+    // ========================================================================
+    // 放置模式（随玩家移动 / 固定）
+    // ========================================================================
+
+    /**
+     * 获取当前生效的预览原点。
+     * - FIXED 模式且已记录固定位置：返回 fixedOrigin
+     * - 否则：返回玩家位置 + 手动偏移
+     */
+    private BlockPos getEffectiveOrigin(Minecraft mc) {
+        if (lastMode == PastePlacementMode.FIXED && fixedOrigin != null) {
+            return fixedOrigin;
+        }
+        return AxeModeHandler.getPasteOrigin(mc.player);
+    }
+
+    /**
+     * 处理放置模式切换。
+     * - 切换到 FIXED：记录当前预览位置作为固定原点，用户可通过 //paste 在此位置执行真正的 paste
+     * - 切换到 FOLLOW_PLAYER：清除固定位置，预览恢复跟随玩家
+     */
+    private void handlePlacementModeChange(PastePlacementMode newMode, Minecraft mc) {
+        if (mc.player == null) return;
+
+        if (newMode == PastePlacementMode.FIXED) {
+            // 前置检查：单人世界才能直接 paste
+            if (!WorldEditBridge.canUseDirectPaste()) {
+                mc.player.displayClientMessage(
+                        Component.translatable("wegui.message.fixed_mode_multiplayer_disabled")
+                                .withStyle(ChatFormatting.RED), true);
+                Configs.PastePreview.PASTE_PLACEMENT_MODE.setOptionListValue(PastePlacementMode.FOLLOW_PLAYER);
+                return;
+            }
+
+            // 前置检查：必须有剪贴板
+            BlockPos currentOrigin = AxeModeHandler.getPasteOrigin(mc.player);
+            Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc, currentOrigin);
+            if (blocks == null || blocks.isEmpty()) {
+                mc.player.displayClientMessage(
+                        Component.translatable("wegui.message.fixed_mode_no_clipboard")
+                                .withStyle(ChatFormatting.RED), true);
+                Configs.PastePreview.PASTE_PLACEMENT_MODE.setOptionListValue(PastePlacementMode.FOLLOW_PLAYER);
+                return;
+            }
+
+            // 只固定渲染位置，不自动 paste（避免异步 paste 失败时用户无法感知）
+            // 用户通过 //paste 在固定位置执行真正的 paste，渲染与 paste 同步
+            fixedOrigin = currentOrigin;
+            mc.player.displayClientMessage(
+                    Component.translatable("wegui.message.fixed_mode_enabled")
+                            .withStyle(ChatFormatting.GREEN), true);
+        } else {
+            // 切换回 FOLLOW_PLAYER：清除固定位置
+            fixedOrigin = null;
         }
     }
 
-    private static void renderInternal(WorldRenderContext context) {
+    /** 当前是否处于固定模式（直接读配置，不依赖渲染线程的 lastMode） */
+    public static boolean isFixedMode() {
+        PastePlacementMode mode = (PastePlacementMode) Configs.PastePreview.PASTE_PLACEMENT_MODE.getOptionListValue();
+        return mode == PastePlacementMode.FIXED && INSTANCE.fixedOrigin != null;
+    }
+
+    /** 获取固定位置（固定模式下），否则返回 null */
+    @Nullable
+    public static BlockPos getFixedOrigin() {
+        return isFixedMode() ? INSTANCE.fixedOrigin : null;
+    }
+
+    /** 设置固定位置（用于 pasteAtPreview 在 fixedOrigin 未初始化时回填） */
+    public static void setFixedOrigin(BlockPos origin) {
+        INSTANCE.fixedOrigin = origin;
+    }
+
+    // ========================================================================
+    // 层 ③：ghost blocks（BEFORE_TRANSLUCENT）
+    // ========================================================================
+
+    private static void renderGhostBlocksHook(WorldRenderContext context) {
+        try {
+            INSTANCE.renderGhostBlocks(context);
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.debug("WeGui ghost blocks 渲染出错: {}", e.toString());
+        }
+    }
+
+    private void renderGhostBlocks(WorldRenderContext context) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
+        if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) return;
+
+        // 检测放置模式变化
+        PastePlacementMode currentMode = (PastePlacementMode) Configs.PastePreview.PASTE_PLACEMENT_MODE.getOptionListValue();
+        if (currentMode != lastMode) {
+            handlePlacementModeChange(currentMode, mc);
+            lastMode = (PastePlacementMode) Configs.PastePreview.PASTE_PLACEMENT_MODE.getOptionListValue();
+        }
+
+        BlockPos origin = getEffectiveOrigin(mc);
+        Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc, origin);
+        if (blocks == null || blocks.isEmpty()) return;
+
+        // 确保 chunk 缓存有效
+        ensureChunkCache(blocks, origin);
+
+        float alpha = (float) Configs.PastePreview.GHOST_BLOCK_ALPHA.getDoubleValue();
+        if (alpha <= 0.0f) return;
+
+        int renderDistance = Configs.PastePreview.GHOST_RENDER_DISTANCE.getIntegerValue();
+        double renderDistSq = (double) renderDistance * renderDistance;
 
         Vec3 cam = context.gameRenderer().getMainCamera().position();
         PoseStack pose = context.matrices();
         pose.pushPose();
         pose.translate(-cam.x, -cam.y, -cam.z);
 
-        VertexConsumer buffer = context.consumers().getBuffer(RenderTypes.lines());
-        Matrix4f matrix = pose.last().pose();
-
-        // 1) 当前 WorldEdit 选区
-        if (Configs.Generic.SELECTION_BOUNDS_ENABLED.getBooleanValue()) {
-            try {
-                if (cachedSelectionBounds == null) {
-                    cachedSelectionBounds = WorldEditBridge.getSelectionBounds(mc);
-                }
-                WorldEditBridge.Bounds sel = cachedSelectionBounds;
-                if (sel != null) {
-                    AABB selectionBox = new AABB(sel.minX(), sel.minY(), sel.minZ(),
-                            sel.minX() + sel.w(), sel.minY() + sel.h(), sel.minZ() + sel.l());
-                    var c = Configs.PastePreview.SELECTION_BOX_COLOR.getColor();
-                    drawBox(buffer, matrix, selectionBox, c.r, c.g, c.b, c.a);
-                }
-            } catch (Throwable e) {
-                com.sow.wegui.WeGuiMod.LOGGER.debug("渲染选区大框时出错: {}", e.toString());
-            }
-
-            // 为第一、二选点单独渲染角点框（略大于 1x1x1，蓝色比红色略大，均在方块外侧）
-            try {
-                if (cachedPartialCorners == null) {
-                    cachedPartialCorners = WorldEditBridge.getPartialSelectionCorners(mc);
-                }
-                WorldEditBridge.PartialCornerPositions partial = cachedPartialCorners;
-                if (partial != null) {
-                    if (partial.pos1() != null) {
-                        var c1 = Configs.PastePreview.SELECTION_POS1_COLOR.getColor();
-                        drawCornerBox(buffer, matrix, partial.pos1(), 1.05f, c1.r, c1.g, c1.b, c1.a);
-                    }
-                    if (partial.pos2() != null) {
-                        var c2 = Configs.PastePreview.SELECTION_POS2_COLOR.getColor();
-                        drawCornerBox(buffer, matrix, partial.pos2(), 1.10f, c2.r, c2.g, c2.b, c2.a);
-                    }
-                }
-            } catch (Throwable e) {
-                com.sow.wegui.WeGuiMod.LOGGER.debug("渲染选点角框时出错: {}", e.toString());
-            }
+        BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
+        MultiBufferSource source = context.consumers();
+        if (source == null) {
+            pose.popPose();
+            return;
         }
+        AlphaMultiBufferSource alphaSource = new AlphaMultiBufferSource(source, alpha);
 
-        // 2) copy 后的粘贴预览
-        if (Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) {
-            BlockPos origin = AxeModeHandler.getPasteOrigin(mc.player);
-            Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc, origin);
-            if (blocks != null && !blocks.isEmpty()) {
-                AABB pasteBox = cachedPasteBox != null ? cachedPasteBox : computePasteBounds(blocks, origin);
-                drawBox(buffer, matrix, pasteBox, 0.3f, 1.0f, 0.5f, 0.8f);
+        for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
+            // 距离剔除（按 chunk section 中心）
+            double cx = (group.worldAabb.minX + group.worldAabb.maxX) * 0.5;
+            double cy = (group.worldAabb.minY + group.worldAabb.maxY) * 0.5;
+            double cz = (group.worldAabb.minZ + group.worldAabb.maxZ) * 0.5;
+            double distSq = (cx - cam.x) * (cx - cam.x) + (cy - cam.y) * (cy - cam.y) + (cz - cam.z) * (cz - cam.z);
+            if (distSq > renderDistSq) continue;
 
-                // 3) 真实材质半透明预览
-                renderGhostBlocks(mc, pose, context.consumers(), blocks, origin, cam);
-
-                // 4) 每个非空气方块单独边框（投影同款）
-                if (Configs.Generic.BLOCK_OUTLINE_ENABLED.getBooleanValue()) {
-                    var c = Configs.PastePreview.BLOCK_OUTLINE_COLOR.getColor();
-                    renderBlockOutlines(buffer, matrix, blocks, origin, c.r, c.g, c.b, c.a, cam);
+            List<BlockPos> positions = group.relPositions;
+            List<BlockState> states = group.states;
+            for (int i = 0; i < positions.size(); i++) {
+                try {
+                    BlockPos target = origin.offset(positions.get(i));
+                    BlockState state = states.get(i);
+                    pose.pushPose();
+                    pose.translate(target.getX(), target.getY(), target.getZ());
+                    dispatcher.renderSingleBlock(state, pose, alphaSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+                    pose.popPose();
+                } catch (Throwable e) {
+                    WeGuiMod.LOGGER.debug("跳过无法渲染的预览方块: {}", e.toString());
                 }
             }
         }
@@ -145,49 +288,218 @@ public final class PastePreviewRenderer {
         pose.popPose();
     }
 
+    // ========================================================================
+    // 层 ①②④：overlays（IRenderer.onRenderWorldLastAdvanced）
+    // ========================================================================
+
+    @Override
+    public void onRenderWorldLastAdvanced(RenderTarget target, Matrix4f posMatrix, Matrix4f projMatrix,
+                                          Frustum frustum, Camera camera, RenderBuffers buffers,
+                                          ProfilerFiller profiler) {
+        try {
+            renderOverlays(target, posMatrix, projMatrix, frustum, camera, buffers, profiler);
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.debug("WeGui overlay 渲染出错: {}", e.toString());
+        }
+    }
+
+    private void renderOverlays(RenderTarget target, Matrix4f posMatrix, Matrix4f projMatrix,
+                                Frustum frustum, Camera camera, RenderBuffers buffers,
+                                ProfilerFiller profiler) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) return;
+
+        profiler.push("wegui_overlays");
+
+        // 层 ①：WorldEdit 选区
+        if (Configs.Generic.SELECTION_BOUNDS_ENABLED.getBooleanValue()) {
+            profiler.push("selection");
+            renderSelectionBounds(mc);
+            profiler.pop();
+        }
+
+        // 层 ②③④：paste preview
+        if (Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) {
+            BlockPos origin = getEffectiveOrigin(mc);
+            Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc, origin);
+            if (blocks != null && !blocks.isEmpty()) {
+                ensureChunkCache(blocks, origin);
+
+                // 层 ②：paste 外框 + 半透明面
+                profiler.push("paste_box");
+                renderPasteBox(frustum);
+                profiler.pop();
+
+                // 层 ④：每方块边框
+                if (Configs.Generic.BLOCK_OUTLINE_ENABLED.getBooleanValue()) {
+                    profiler.push("block_outlines");
+                    renderBlockOutlinesBatched(frustum, camera, origin);
+                    profiler.pop();
+                }
+            }
+        }
+
+        profiler.pop();
+    }
+
+    // ------------------------------------------------------------------
+    // 层 ①：选区大框 + pos1/pos2 角点框
+    // ------------------------------------------------------------------
+
+    private void renderSelectionBounds(Minecraft mc) {
+        // 选区大框
+        try {
+            WorldEditBridge.Bounds sel = WorldEditBridge.getSelectionBounds(mc);
+            if (sel != null && sel.w() > 0 && sel.h() > 0 && sel.l() > 0) {
+                BlockPos pos1 = new BlockPos(sel.minX(), sel.minY(), sel.minZ());
+                BlockPos pos2 = new BlockPos(sel.minX() + sel.w() - 1, sel.minY() + sel.h() - 1, sel.minZ() + sel.l() - 1);
+                Color4f colorX = new Color4f(1.0f, 0.25f, 0.25f, 1.0f);
+                Color4f colorY = new Color4f(0.25f, 1.0f, 0.25f, 1.0f);
+                Color4f colorZ = new Color4f(0.25f, 0.25f, 1.0f, 1.0f);
+                RenderUtils.renderAreaOutlineNoCorners(pos1, pos2, 2.0f, colorX, colorY, colorZ);
+            }
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.debug("渲染选区大框时出错: {}", e.toString());
+        }
+
+        // pos1/pos2 角点框
+        try {
+            WorldEditBridge.PartialCornerPositions partial = WorldEditBridge.getPartialSelectionCorners(mc);
+            if (partial != null) {
+                if (partial.pos1() != null) {
+                    var c1 = Configs.PastePreview.SELECTION_POS1_COLOR.getColor();
+                    RenderUtils.renderBlockOutline(partial.pos1(), 0.002f, 3.0f,
+                            new Color4f(c1.r, c1.g, c1.b, c1.a), false);
+                }
+                if (partial.pos2() != null) {
+                    var c2 = Configs.PastePreview.SELECTION_POS2_COLOR.getColor();
+                    RenderUtils.renderBlockOutline(partial.pos2(), 0.002f, 3.0f,
+                            new Color4f(c2.r, c2.g, c2.b, c2.a), false);
+                }
+            }
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.debug("渲染选点角框时出错: {}", e.toString());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 层 ②：paste 整体外框 + 半透明面
+    // ------------------------------------------------------------------
+
+    private void renderPasteBox(Frustum frustum) {
+        if (cachedPasteBox == null) return;
+
+        // frustum 剔除
+        if (!frustum.isVisible(cachedPasteBox)) return;
+
+        BlockPos pos1 = new BlockPos(
+                (int) Math.floor(cachedPasteBox.minX),
+                (int) Math.floor(cachedPasteBox.minY),
+                (int) Math.floor(cachedPasteBox.minZ));
+        BlockPos pos2 = new BlockPos(
+                (int) Math.ceil(cachedPasteBox.maxX) - 1,
+                (int) Math.ceil(cachedPasteBox.maxY) - 1,
+                (int) Math.ceil(cachedPasteBox.maxZ) - 1);
+
+        var c = Configs.PastePreview.BOX_SIDE_COLOR.getColor();
+        Color4f outlineColor = new Color4f(c.r, c.g, c.b, 1.0f);
+
+        // 外框线
+        RenderUtils.renderAreaOutlineNoCorners(pos1, pos2, 2.0f, outlineColor, outlineColor, outlineColor);
+
+        // 半透明面
+        float sideAlpha = (float) Configs.PastePreview.BOX_SIDE_ALPHA.getDoubleValue();
+        if (sideAlpha > 0.0f) {
+            Color4f sideColor = new Color4f(c.r, c.g, c.b, sideAlpha);
+            Matrix4f matrix = RenderSystem.getModelViewStack();
+            RenderUtils.renderAreaSides(pos1, pos2, sideColor, matrix);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 层 ④：每方块边框（batched，frustum 剔除）
+    // ------------------------------------------------------------------
+
+    private void renderBlockOutlinesBatched(Frustum frustum, Camera camera, BlockPos origin) {
+        if (chunkCache.isEmpty()) return;
+
+        var c = Configs.PastePreview.BLOCK_OUTLINE_COLOR.getColor();
+        Color4f color = new Color4f(c.r, c.g, c.b, c.a);
+        int renderDistance = Configs.PastePreview.GHOST_RENDER_DISTANCE.getIntegerValue();
+        double renderDistSq = (double) renderDistance * renderDistance;
+        Vec3 camPos = camera.position();
+
+        RenderContext ctx = new RenderContext(
+                () -> "wegui:block_outlines",
+                MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL);
+        BufferBuilder buffer = ctx.start(
+                () -> "wegui:block_outlines",
+                MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL);
+
+        for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
+            // frustum 剔除
+            if (!frustum.isVisible(group.worldAabb)) continue;
+
+            // 距离剔除
+            double cx = (group.worldAabb.minX + group.worldAabb.maxX) * 0.5;
+            double cy = (group.worldAabb.minY + group.worldAabb.maxY) * 0.5;
+            double cz = (group.worldAabb.minZ + group.worldAabb.maxZ) * 0.5;
+            double distSq = (cx - camPos.x) * (cx - camPos.x)
+                    + (cy - camPos.y) * (cy - camPos.y)
+                    + (cz - camPos.z) * (cz - camPos.z);
+            if (distSq > renderDistSq) continue;
+
+            List<BlockPos> positions = group.relPositions;
+            for (BlockPos rel : positions) {
+                BlockPos target = origin.offset(rel);
+                RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(target, color, 0.002, 1.5f, buffer);
+            }
+        }
+
+        try {
+            MeshData meshData = buffer.build();
+            if (meshData != null) {
+                ctx.draw(meshData, false, true);
+                meshData.close();
+            }
+            ctx.reset();
+        } catch (Exception ignored) {
+        }
+    }
+
+    // ========================================================================
+    // clipboard 缓存
+    // ========================================================================
+
     @Nullable
-    private static Map<BlockPos, BlockState> getClipboardBlocksCached(Minecraft mc, BlockPos origin) {
+    private Map<BlockPos, BlockState> getClipboardBlocksCached(Minecraft mc, BlockPos origin) {
         try {
             LocalSession session = WorldEditAdapter.session(mc.player);
             if (session == null) {
-                cachedBlocks = null;
-                cachedPasteBox = null;
-                cachedClipboardHolder = null;
-                cachedTransform = null;
+                clearCache();
                 return null;
             }
             ClipboardHolder holder;
             try {
                 holder = session.getClipboard();
             } catch (Throwable e) {
-                cachedBlocks = null;
-                cachedPasteBox = null;
-                cachedClipboardHolder = null;
-                cachedTransform = null;
+                clearCache();
                 return null;
             }
             if (holder == null) {
-                cachedBlocks = null;
-                cachedPasteBox = null;
-                cachedClipboardHolder = null;
-                cachedTransform = null;
+                clearCache();
                 return null;
             }
             Transform transform = holder.getTransform();
-            // 缓存命中：origin、holder 引用、transform 引用均未变
             if (cachedBlocks != null
                     && origin.equals(cachedPasteOrigin)
                     && holder == cachedClipboardHolder
                     && transform == cachedTransform) {
                 return cachedBlocks;
             }
-            // 缓存未命中：重新计算
             Map<BlockPos, BlockState> blocks = WorldEditBridge.getClipboardBlocks(mc);
             if (blocks == null) {
-                cachedBlocks = null;
-                cachedPasteBox = null;
-                cachedClipboardHolder = null;
-                cachedTransform = null;
+                clearCache();
                 return null;
             }
             cachedBlocks = blocks;
@@ -195,19 +507,32 @@ public final class PastePreviewRenderer {
             cachedClipboardHolder = holder;
             cachedTransform = transform;
             cachedPasteBox = computePasteBounds(blocks, origin);
+            chunkCacheDirty = true;
             return blocks;
         } catch (Throwable e) {
             return null;
         }
     }
 
+    private void clearCache() {
+        cachedBlocks = null;
+        cachedPasteBox = null;
+        cachedPasteOrigin = null;
+        cachedClipboardHolder = null;
+        cachedTransform = null;
+        chunkCacheDirty = true;
+    }
+
+    private void ensureChunkCache(Map<BlockPos, BlockState> blocks, BlockPos origin) {
+        if (chunkCacheDirty) {
+            chunkCache.rebuild(blocks, origin);
+            chunkCacheDirty = false;
+        }
+    }
+
     private static AABB computePasteBounds(Map<BlockPos, BlockState> blocks, BlockPos origin) {
-        int minX = Integer.MAX_VALUE;
-        int minY = Integer.MAX_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE;
-        int maxY = Integer.MIN_VALUE;
-        int maxZ = Integer.MIN_VALUE;
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
         for (BlockPos rel : blocks.keySet()) {
             BlockPos pos = origin.offset(rel);
             minX = Math.min(minX, pos.getX());
@@ -220,80 +545,12 @@ public final class PastePreviewRenderer {
         return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
-    private static void renderGhostBlocks(Minecraft mc, PoseStack pose, MultiBufferSource bufferSource,
-                                          Map<BlockPos, BlockState> blocks, BlockPos origin, Vec3 cam) {
-        BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
-        AlphaMultiBufferSource alphaSource = new AlphaMultiBufferSource(bufferSource, GHOST_ALPHA);
-        int rendered = 0;
-        for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
-            try {
-                BlockPos target = origin.offset(entry.getKey());
-                double dx = target.getX() + 0.5 - cam.x;
-                double dy = target.getY() + 0.5 - cam.y;
-                double dz = target.getZ() + 0.5 - cam.z;
-                if (dx * dx + dy * dy + dz * dz > GHOST_RENDER_DISTANCE_SQ) continue;
-                if (rendered >= GHOST_RENDER_LIMIT) break;
-                BlockState state = entry.getValue();
-                pose.pushPose();
-                pose.translate(target.getX(), target.getY(), target.getZ());
-                dispatcher.renderSingleBlock(state, pose, alphaSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
-                pose.popPose();
-                rendered++;
-            } catch (Throwable e) {
-                com.sow.wegui.WeGuiMod.LOGGER.debug("跳过无法渲染的预览方块: {}", e.toString());
-            }
-        }
-    }
-
-    private static void drawCornerBox(VertexConsumer buffer, Matrix4f matrix, BlockPos pos, float scale,
-                                      float r, float g, float b, float a) {
-        float inset = (scale - 1.0f) / 2.0f;
-        drawBox(buffer, matrix, new AABB(pos.getX() - inset, pos.getY() - inset, pos.getZ() - inset,
-                pos.getX() + 1 + inset, pos.getY() + 1 + inset, pos.getZ() + 1 + inset), r, g, b, a);
-    }
-
-    private static void renderBlockOutlines(VertexConsumer buffer, Matrix4f matrix,
-                                            Map<BlockPos, BlockState> blocks, BlockPos origin,
-                                            float r, float g, float b, float a, Vec3 cam) {
-        for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
-            BlockPos target = origin.offset(entry.getKey());
-            double dx = target.getX() + 0.5 - cam.x;
-            double dy = target.getY() + 0.5 - cam.y;
-            double dz = target.getZ() + 0.5 - cam.z;
-            if (dx * dx + dy * dy + dz * dz > GHOST_RENDER_DISTANCE_SQ) continue;
-            drawBox(buffer, matrix, new AABB(target.getX(), target.getY(), target.getZ(),
-                    target.getX() + 1, target.getY() + 1, target.getZ() + 1), r, g, b, a);
-        }
-    }
-
-    private static void drawBox(VertexConsumer buffer, Matrix4f matrix, AABB box, float r, float g, float b, float a) {
-        drawLine(buffer, matrix, (float) box.minX, (float) box.minY, (float) box.minZ, (float) box.maxX, (float) box.minY, (float) box.minZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.minX, (float) box.minY, (float) box.minZ, (float) box.minX, (float) box.maxY, (float) box.minZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.minX, (float) box.minY, (float) box.minZ, (float) box.minX, (float) box.minY, (float) box.maxZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.maxX, (float) box.maxY, (float) box.maxZ, (float) box.minX, (float) box.maxY, (float) box.maxZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.maxX, (float) box.maxY, (float) box.maxZ, (float) box.maxX, (float) box.minY, (float) box.maxZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.maxX, (float) box.maxY, (float) box.maxZ, (float) box.maxX, (float) box.maxY, (float) box.minZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.minX, (float) box.maxY, (float) box.maxZ, (float) box.minX, (float) box.maxY, (float) box.minZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.minX, (float) box.maxY, (float) box.maxZ, (float) box.minX, (float) box.minY, (float) box.maxZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.maxX, (float) box.minY, (float) box.minZ, (float) box.maxX, (float) box.minY, (float) box.maxZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.maxX, (float) box.minY, (float) box.minZ, (float) box.maxX, (float) box.maxY, (float) box.minZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.minX, (float) box.maxY, (float) box.minZ, (float) box.maxX, (float) box.maxY, (float) box.minZ, r, g, b, a);
-        drawLine(buffer, matrix, (float) box.minX, (float) box.minY, (float) box.maxZ, (float) box.maxX, (float) box.minY, (float) box.maxZ, r, g, b, a);
-    }
-
-    private static void drawLine(VertexConsumer buffer, Matrix4f matrix, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a) {
-        buffer.addVertex(matrix, x1, y1, z1)
-                .setColor(r, g, b, a)
-                .setNormal(x2 - x1, y2 - y1, z2 - z1)
-                .setLineWidth(2.0f);
-        buffer.addVertex(matrix, x2, y2, z2)
-                .setColor(r, g, b, a)
-                .setNormal(x1 - x2, y1 - y2, z1 - z2)
-                .setLineWidth(2.0f);
-    }
+    // ========================================================================
+    // AlphaMultiBufferSource / AlphaVertexConsumer（ghost block 半透明）
+    // ========================================================================
 
     /**
-     * 把任意请求都转到半透明 moving block RenderType，使后续 VertexConsumer 的 alpha 生效。
+     * 把任意请求都转到自定义 ghost block RenderType（cull=false），使后续 VertexConsumer 的 alpha 生效。
      */
     private static final class AlphaMultiBufferSource implements MultiBufferSource {
         private final MultiBufferSource delegate;
@@ -308,7 +565,7 @@ public final class PastePreviewRenderer {
         @Override
         public VertexConsumer getBuffer(RenderType renderType) {
             return buffers.computeIfAbsent(renderType, rt ->
-                    new AlphaVertexConsumer(delegate.getBuffer(RenderTypes.translucentMovingBlock()), alpha));
+                    new AlphaVertexConsumer(delegate.getBuffer(GHOST_BLOCK_TYPE), alpha));
         }
     }
 

@@ -3,6 +3,7 @@ package com.sow.wegui.client;
 import com.sow.wegui.InitHandler;
 import com.sow.wegui.config.Configs;
 import fi.dy.masa.malilib.event.InitializationHandler;
+import fi.dy.masa.malilib.event.RenderEventHandler;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 
@@ -40,7 +41,10 @@ public class WeGuiClient implements ClientModInitializer {
         });
 
         StatusBar.register();
+        // ghost blocks（层③）注册到 BEFORE_TRANSLUCENT
         PastePreviewRenderer.register();
+        // overlays（层①②④）注册到 malilib IRenderer
+        RenderEventHandler.getInstance().registerWorldLastRenderer(PastePreviewRenderer.getInstance());
         AxeModeHandler.register();
 
         // 触发 CommandSender 类初始化，注册聊天命令拦截器

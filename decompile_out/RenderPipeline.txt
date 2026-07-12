@@ -1,0 +1,47 @@
+﻿Compiled from "RenderPipeline.java"
+public class com.mojang.blaze3d.pipeline.RenderPipeline {
+  private final net.minecraft.resources.Identifier location;
+  private final net.minecraft.resources.Identifier vertexShader;
+  private final net.minecraft.resources.Identifier fragmentShader;
+  private final net.minecraft.client.renderer.ShaderDefines shaderDefines;
+  private final java.util.List<java.lang.String> samplers;
+  private final java.util.List<com.mojang.blaze3d.pipeline.RenderPipeline$UniformDescription> uniforms;
+  private final com.mojang.blaze3d.platform.DepthTestFunction depthTestFunction;
+  private final com.mojang.blaze3d.platform.PolygonMode polygonMode;
+  private final boolean cull;
+  private final com.mojang.blaze3d.platform.LogicOp colorLogic;
+  private final java.util.Optional<com.mojang.blaze3d.pipeline.BlendFunction> blendFunction;
+  private final boolean writeColor;
+  private final boolean writeAlpha;
+  private final boolean writeDepth;
+  private final com.mojang.blaze3d.vertex.VertexFormat vertexFormat;
+  private final com.mojang.blaze3d.vertex.VertexFormat$Mode vertexFormatMode;
+  private final float depthBiasScaleFactor;
+  private final float depthBiasConstant;
+  private final int sortKey;
+  private static int sortKeySeed;
+  protected com.mojang.blaze3d.pipeline.RenderPipeline(net.minecraft.resources.Identifier, net.minecraft.resources.Identifier, net.minecraft.resources.Identifier, net.minecraft.client.renderer.ShaderDefines, java.util.List<java.lang.String>, java.util.List<com.mojang.blaze3d.pipeline.RenderPipeline$UniformDescription>, java.util.Optional<com.mojang.blaze3d.pipeline.BlendFunction>, com.mojang.blaze3d.platform.DepthTestFunction, com.mojang.blaze3d.platform.PolygonMode, boolean, boolean, boolean, boolean, com.mojang.blaze3d.platform.LogicOp, com.mojang.blaze3d.vertex.VertexFormat, com.mojang.blaze3d.vertex.VertexFormat$Mode, float, float, int);
+  public int getSortKey();
+  public static void updateSortKeySeed();
+  public java.lang.String toString();
+  public com.mojang.blaze3d.platform.DepthTestFunction getDepthTestFunction();
+  public com.mojang.blaze3d.platform.PolygonMode getPolygonMode();
+  public boolean isCull();
+  public com.mojang.blaze3d.platform.LogicOp getColorLogic();
+  public java.util.Optional<com.mojang.blaze3d.pipeline.BlendFunction> getBlendFunction();
+  public boolean isWriteColor();
+  public boolean isWriteAlpha();
+  public boolean isWriteDepth();
+  public float getDepthBiasScaleFactor();
+  public float getDepthBiasConstant();
+  public net.minecraft.resources.Identifier getLocation();
+  public com.mojang.blaze3d.vertex.VertexFormat getVertexFormat();
+  public com.mojang.blaze3d.vertex.VertexFormat$Mode getVertexFormatMode();
+  public net.minecraft.resources.Identifier getVertexShader();
+  public net.minecraft.resources.Identifier getFragmentShader();
+  public net.minecraft.client.renderer.ShaderDefines getShaderDefines();
+  public java.util.List<java.lang.String> getSamplers();
+  public java.util.List<com.mojang.blaze3d.pipeline.RenderPipeline$UniformDescription> getUniforms();
+  public boolean wantsDepthTexture();
+  public static com.mojang.blaze3d.pipeline.RenderPipeline$Builder builder(com.mojang.blaze3d.pipeline.RenderPipeline$Snippet...);
+}
