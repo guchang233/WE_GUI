@@ -29,6 +29,7 @@ public class OptionPickerScreen extends GuiBase {
 
     private GuiTextFieldGeneric searchField;
     private List<WeCommands.Option> filtered = new ArrayList<>();
+    private int scrollOffset = 0;
 
     public OptionPickerScreen(Screen parent, String title, List<WeCommands.Option> options, String searchHint, Consumer<WeCommands.Option> onSelected) {
         this.setParent(parent);
@@ -68,10 +69,11 @@ public class OptionPickerScreen extends GuiBase {
             if (query.isEmpty()
                     || opt.value().toLowerCase().contains(query)
                     || opt.label().toLowerCase().contains(query)
-                    || opt.tooltip().toLowerCase().contains(query)) {
+                    || (opt.tooltip() != null && opt.tooltip().toLowerCase().contains(query))) {
                 filtered.add(opt);
             }
         }
+        scrollOffset = 0;
         rebuildOptionButtons();
     }
 
@@ -98,8 +100,14 @@ public class OptionPickerScreen extends GuiBase {
         int y = TOP;
         int btnW = this.width - MARGIN_X * 2;
         int maxVisible = Math.max(6, (this.height - TOP - 40) / ROW_HEIGHT);
-        for (int i = 0; i < Math.min(filtered.size(), maxVisible); i++) {
-            WeCommands.Option opt = filtered.get(i);
+        int total = filtered.size();
+        int effectiveMax = Math.min(maxVisible, total);
+        int start = Math.min(scrollOffset, Math.max(0, total - maxVisible));
+        start = Math.max(0, start);
+        for (int i = 0; i < effectiveMax; i++) {
+            int idx = start + i;
+            if (idx >= total) break;
+            WeCommands.Option opt = filtered.get(idx);
             ButtonGeneric btn = new ButtonGeneric(MARGIN_X, y, btnW, 20, opt.label());
             if (!opt.tooltip().isBlank()) {
                 btn.setHoverStrings(opt.tooltip());
@@ -119,6 +127,20 @@ public class OptionPickerScreen extends GuiBase {
     @Override
     public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTick) {
         // 控件自行渲染
+    }
+
+    @Override
+    public boolean onMouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        int maxVisible = Math.max(6, (this.height - TOP - 40) / ROW_HEIGHT);
+        int total = filtered.size();
+        if (total <= maxVisible) return false;
+        int maxStart = total - maxVisible;
+        // 向上滚（verticalAmount > 0）查看下方内容
+        scrollOffset -= (int) verticalAmount;
+        if (scrollOffset < 0) scrollOffset = 0;
+        if (scrollOffset > maxStart) scrollOffset = maxStart;
+        rebuildOptionButtons();
+        return true;
     }
 
     private void onSelect(WeCommands.Option option) {

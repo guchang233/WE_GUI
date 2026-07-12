@@ -71,7 +71,7 @@ public class Configs implements IConfigHandler {
         public static final ConfigInteger STATUS_BAR_OFFSET_X = new ConfigInteger("statusBarOffsetX", 4, -4096, 4096).apply(STATUS_BAR_KEY);
         public static final ConfigInteger STATUS_BAR_OFFSET_Y = new ConfigInteger("statusBarOffsetY", 4, -4096, 4096).apply(STATUS_BAR_KEY);
         public static final ConfigString STATUS_BAR_LINE1 = new ConfigString("statusBarLine1", "{size} §8| §7{count}").apply(STATUS_BAR_KEY);
-        public static final ConfigString STATUS_BAR_LINE2 = new ConfigString("statusBarLine2", "§7剪贴板: {clipboard}").apply(STATUS_BAR_KEY);
+        public static final ConfigString STATUS_BAR_LINE2 = new ConfigString("statusBarLine2", "§7Clipboard: {clipboard}").apply(STATUS_BAR_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 STATUS_BAR_ANCHOR,

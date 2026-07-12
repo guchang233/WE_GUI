@@ -61,6 +61,8 @@ public final class AxeModeHandler {
     private static AxeMode currentMode = AxeMode.NORMAL;
     private static LastModifiedCorner lastModified = LastModifiedCorner.NONE;
     private static BlockPos pastePreviewOffset = BlockPos.ZERO;
+    private static Item cachedWandItem;
+    private static String cachedWandItemId;
 
     public static void register() {
         // 左键记录 pos1 为最后修改点，并根据开关显示提示
@@ -257,12 +259,20 @@ public final class AxeModeHandler {
     @Nullable
     private static Item getConfiguredWandItem() {
         String id = Configs.Generic.WAND_ITEM.getStringValue();
+        if (id.equals(cachedWandItemId) && cachedWandItem != null) {
+            return cachedWandItem;
+        }
         try {
             net.minecraft.resources.Identifier identifier = net.minecraft.resources.Identifier.parse(id);
-            return net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier)
+            Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier)
                     .map(ref -> ref.value())
                     .orElse(null);
+            cachedWandItemId = id;
+            cachedWandItem = item;
+            return item;
         } catch (Exception e) {
+            cachedWandItemId = id;
+            cachedWandItem = null;
             return null;
         }
     }

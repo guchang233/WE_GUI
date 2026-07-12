@@ -110,6 +110,7 @@ public final class CommandSender {
         String lower = command.toLowerCase();
         return lower.startsWith("//copy") || lower.startsWith("//cut") ||
                lower.startsWith("//flip") || lower.startsWith("//rotate") ||
-               lower.startsWith("//clearclipboard") || lower.startsWith("//load");
+               lower.startsWith("/clearclipboard") || lower.startsWith("//clearclipboard") ||
+               lower.startsWith("//load");
     }
 }

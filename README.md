@@ -22,7 +22,7 @@
 ---
 📋 Quick Wheel Menu
 
- 支持自定义和添加所有可用指令到轮盘菜单（即将添加）
+ 支持自定义和添加所有可用指令到轮盘菜单
 
 ---
 # 预览
@@ -47,6 +47,12 @@
 ⬆️正在努力优化GUI样式。
 
 ---
+
+<img width="600" height="450" alt="QQ20260712-012228" src="https://github.com/user-attachments/assets/9d1b1eea-3f0d-4558-84da-436b30569ee4" />
+
+⬆️快捷轮盘样式。
+
+
 [YouTube](https://www.youtube-nocookie.com/embed/qq780XHGRP8)
 
 # 关于

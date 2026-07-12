@@ -49,6 +49,10 @@ public class RadialMenuScreen extends GuiBase {
     private int hoveredSegment = -1;
     private int currentPage = 0;
     private int totalPages = 1;
+    private String cachedTitle;
+    private String cachedEmptyHint;
+    private long lastScrollTime = 0;
+    private static final long SCROLL_THROTTLE_MS = 150;
 
     // 渲染缓冲：预计算的顶点和交点数组，避免每帧分配
     private static final int ARC_STEPS = 24;
@@ -59,6 +63,8 @@ public class RadialMenuScreen extends GuiBase {
     private final double[] outerRingVertY = new double[RING_STEPS * 2];
     private final double[] innerRingVertX = new double[RING_STEPS * 2];
     private final double[] innerRingVertY = new double[RING_STEPS * 2];
+    private final double[] innerFilledVertX = new double[RING_STEPS];
+    private final double[] innerFilledVertY = new double[RING_STEPS];
     private final double[] lineVertX = new double[4];
     private final double[] lineVertY = new double[4];
     private final double[] arcVertX = new double[(ARC_STEPS + 1) * 2];
@@ -66,7 +72,9 @@ public class RadialMenuScreen extends GuiBase {
     private final double[] crossingsBuffer = new double[256];
 
     public RadialMenuScreen() {
-        this.setTitle(Component.translatable("wegui.radial.title").getString());
+        cachedTitle = Component.translatable("wegui.radial.title").getString();
+        cachedEmptyHint = Component.translatable("wegui.radial.empty").getString();
+        this.setTitle(cachedTitle);
     }
 
     @Override
@@ -100,6 +108,7 @@ public class RadialMenuScreen extends GuiBase {
         // 预计算圆环顶点（外圆顺时针 + 内圆逆时针），避免每帧重复 cos/sin
         precomputeRingVertices(outerRingVertX, outerRingVertY, outerRadius - 1, outerRadius + 1);
         precomputeRingVertices(innerRingVertX, innerRingVertY, innerRadius - 1, innerRadius + 1);
+        precomputeFilledCircleVertices(innerFilledVertX, innerFilledVertY, innerRadius);
     }
 
     /** 预计算圆环多边形顶点到指定数组 */
@@ -116,6 +125,15 @@ public class RadialMenuScreen extends GuiBase {
             vx[idx] = r1 * Math.cos(a);
             vy[idx] = r1 * Math.sin(a);
             idx++;
+        }
+    }
+
+    /** 预计算实心圆多边形顶点（单圆，RING_STEPS 个顶点） */
+    private void precomputeFilledCircleVertices(double[] vx, double[] vy, int radius) {
+        for (int i = 0; i < RING_STEPS; i++) {
+            double a = 2 * Math.PI * i / RING_STEPS;
+            vx[i] = radius * Math.cos(a);
+            vy[i] = radius * Math.sin(a);
         }
     }
 
@@ -138,7 +156,7 @@ public class RadialMenuScreen extends GuiBase {
         hoveredSegment = getHoveredSegment(mouseX, mouseY, pageCmds);
 
         if (commands.isEmpty()) {
-            String msg = Component.translatable("wegui.radial.empty").getString();
+            String msg = cachedEmptyHint;
             int textWidth = this.font.width(msg);
             RenderUtils.drawOutlinedBox(ctx, centerX - textWidth / 2 - 10, centerY - 14, textWidth + 20, 28, COLOR_PAGE_BG, COLOR_DIVIDER);
             ctx.drawString(this.font, msg, centerX - textWidth / 2, centerY - 4, COLOR_TEXT, false);
@@ -219,7 +237,7 @@ public class RadialMenuScreen extends GuiBase {
             int tw = this.font.width(text);
             ctx.drawString(this.font, text, centerX - tw / 2, centerY - 4, COLOR_TEXT, false);
         } else {
-            String title = Component.translatable("wegui.radial.title").getString();
+            String title = cachedTitle;
             int tw = this.font.width(title);
             ctx.drawString(this.font, title, centerX - tw / 2, centerY - 4, COLOR_TEXT_DIM, false);
         }
@@ -258,11 +276,15 @@ public class RadialMenuScreen extends GuiBase {
     @Override
     public boolean onMouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         if (totalPages <= 1) return false;
-        // malilib 的第四个参数为垂直滚动量：向下滚动 < 0，向上 > 0
+        long now = System.currentTimeMillis();
+        if (now - lastScrollTime < SCROLL_THROTTLE_MS) {
+            return true; // 节流期内消费事件但不切页
+        }
+        lastScrollTime = now;
         if (verticalAmount < 0) {
-            currentPage = (currentPage + 1) % totalPages; // 下滚增加页数
+            currentPage = (currentPage + 1) % totalPages;
         } else {
-            currentPage = (currentPage - 1 + totalPages) % totalPages; // 上滚减小页数
+            currentPage = (currentPage - 1 + totalPages) % totalPages;
         }
         return true;
     }
@@ -300,7 +322,9 @@ public class RadialMenuScreen extends GuiBase {
         double angle = Math.atan2(dy, dx);
         double normalized = (angle + Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI);
         double segmentAngle = 2 * Math.PI / pageCmds.size();
-        return (int) (normalized / segmentAngle);
+        int idx = (int) (normalized / segmentAngle);
+        if (idx >= pageCmds.size()) idx = pageCmds.size() - 1;
+        return idx;
     }
 
     // ==================== 渲染方法（多边形扫描线填充） ====================
@@ -334,15 +358,7 @@ public class RadialMenuScreen extends GuiBase {
 
     /** 填充圆 */
     private void drawFilledCircleAA(GuiContext ctx, int cx, int cy, int radius, int color) {
-        double R2 = (double) radius * radius;
-        for (int y = -radius; y <= radius; y++) {
-            double yOuterSq = R2 - (double) y * y;
-            if (yOuterSq < 0) continue;
-            double xR = Math.sqrt(yOuterSq);
-            int xMin = -(int) Math.floor(xR);
-            int xMax = (int) Math.floor(xR);
-            ctx.fill(cx + xMin, cy + y, cx + xMax + 1, cy + y + 1, color);
-        }
+        fillPolygon(ctx, cx, cy, innerFilledVertX, innerFilledVertY, innerFilledVertX.length, color);
     }
 
     /** 圆形描边：使用预计算的圆环顶点 */
@@ -432,6 +448,7 @@ public class RadialMenuScreen extends GuiBase {
                 double y1 = vertY[i], y2 = vertY[j];
                 if ((y1 <= yc && y2 > yc) || (y2 <= yc && y1 > yc)) {
                     double t = (yc - y1) / (y2 - y1);
+                    if (crossingCount >= crossingsBuffer.length) break;
                     crossingsBuffer[crossingCount++] = vertX[i] + t * (vertX[j] - vertX[i]);
                 }
             }

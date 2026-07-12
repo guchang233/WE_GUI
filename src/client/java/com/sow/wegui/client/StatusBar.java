@@ -3,6 +3,7 @@ package com.sow.wegui.client;
 import com.sow.wegui.WeStatus;
 import com.sow.wegui.config.Anchor;
 import com.sow.wegui.config.Configs;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -14,13 +15,26 @@ import net.minecraft.network.chat.Component;
  */
 public final class StatusBar {
     private static WeStatus cached = WeStatus.noWorldEdit();
+    private static int tickCounter = 0;
+    private static final int CAPTURE_INTERVAL_TICKS = 10;
+    private static String cachedClipboardYes;
+    private static String cachedClipboardNo;
+    private static String cachedStatusNoWorldedit;
+    private static String cachedStatusNoSelection;
+    private static String cachedPlaceholderLang;
 
     private StatusBar() {}
 
     public static void register() {
+        ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            tickCounter++;
+            if (tickCounter >= CAPTURE_INTERVAL_TICKS) {
+                tickCounter = 0;
+                cached = WorldEditBridge.capture(mc);
+            }
+        });
         HudRenderCallback.EVENT.register((GuiGraphics drawContext, DeltaTracker tickCounter) -> {
             Minecraft mc = Minecraft.getInstance();
-            cached = WorldEditBridge.capture(mc);
             render(drawContext, mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight());
         });
         ModeIndicator.register();
@@ -62,12 +76,24 @@ public final class StatusBar {
 
     }
 
+    private static void refreshPlaceholderCacheIfNeeded() {
+        Minecraft mc = Minecraft.getInstance();
+        String lang = mc.options.languageCode;
+        if (lang != null && lang.equals(cachedPlaceholderLang) && cachedClipboardYes != null) return;
+        cachedPlaceholderLang = lang;
+        cachedClipboardYes = Component.translatable("wegui.status.yes").getString();
+        cachedClipboardNo = Component.translatable("wegui.status.no").getString();
+        cachedStatusNoWorldedit = Component.translatable("wegui.status.no_worldedit").getString();
+        cachedStatusNoSelection = Component.translatable("wegui.status.no_selection").getString();
+    }
+
     private static String translateStatusPlaceholders(String text) {
         if (text == null) return "";
+        refreshPlaceholderCacheIfNeeded();
         return text
-                .replace("{status.no_worldedit}", Component.translatable("wegui.status.no_worldedit").getString())
-                .replace("{status.no_selection}", Component.translatable("wegui.status.no_selection").getString())
-                .replace("{clipboard.yes}", Component.translatable("wegui.status.yes").getString())
-                .replace("{clipboard.no}", Component.translatable("wegui.status.no").getString());
+                .replace("{status.no_worldedit}", cachedStatusNoWorldedit)
+                .replace("{status.no_selection}", cachedStatusNoSelection)
+                .replace("{clipboard.yes}", cachedClipboardYes)
+                .replace("{clipboard.no}", cachedClipboardNo);
     }
 }
