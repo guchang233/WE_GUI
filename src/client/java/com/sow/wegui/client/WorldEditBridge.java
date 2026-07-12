@@ -41,6 +41,8 @@ import java.util.Map;
 public final class WorldEditBridge {
     private WorldEditBridge() {}
 
+    private static java.lang.reflect.Field POSITION2_FIELD;
+
     public static WeStatus capture(Minecraft mc) {
         if (mc.player == null) return WeStatus.noWorldEdit();
         if (!WorldEditAdapter.isLoaded()) return WeStatus.noWorldEdit();
@@ -248,10 +250,22 @@ public final class WorldEditBridge {
 
     @Nullable
     private static BlockVector3 getSelectorField(CuboidRegionSelector selector, String name) {
+        if (!"position2".equals(name)) {
+            // 仅缓存 position2，其他字段走旧逻辑（目前没有其他调用）
+            try {
+                java.lang.reflect.Field field = CuboidRegionSelector.class.getDeclaredField(name);
+                field.setAccessible(true);
+                return (BlockVector3) field.get(selector);
+            } catch (Throwable e) {
+                return null;
+            }
+        }
         try {
-            java.lang.reflect.Field field = CuboidRegionSelector.class.getDeclaredField(name);
-            field.setAccessible(true);
-            return (BlockVector3) field.get(selector);
+            if (POSITION2_FIELD == null) {
+                POSITION2_FIELD = CuboidRegionSelector.class.getDeclaredField(name);
+                POSITION2_FIELD.setAccessible(true);
+            }
+            return (BlockVector3) POSITION2_FIELD.get(selector);
         } catch (Throwable e) {
             return null;
         }

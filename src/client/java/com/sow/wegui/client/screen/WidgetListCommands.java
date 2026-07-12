@@ -4,6 +4,7 @@ import com.sow.wegui.commands.WeCommands;
 import com.sow.wegui.commands.WeCommands.Category;
 import com.sow.wegui.commands.WeCommands.Command;
 import com.sow.wegui.client.CommandHistory;
+import com.sow.wegui.client.util.CommandMatcher;
 import com.sow.wegui.config.Configs;
 import fi.dy.masa.malilib.gui.widgets.WidgetListBase;
 
@@ -11,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * malilib 命令列表控件，按当前选中的分类/收藏/最近使用/搜索词过滤 WorldEdit 命令。
@@ -64,27 +64,11 @@ public class WidgetListCommands extends WidgetListBase<CommandRow, WidgetCommand
         String query = parent.getSearchQuery();
         List<CommandRow> rows = new ArrayList<>();
         for (Command cmd : source) {
-            if (matches(cmd, query)) {
+            if (CommandMatcher.matches(cmd, query)) {
                 rows.add(new CommandRow(cmd));
             }
         }
         return rows;
-    }
-
-    private boolean matches(Command cmd, String query) {
-        if (query.isBlank()) return true;
-        String q = query.toLowerCase(Locale.ROOT);
-        if (cmd.displayName().toLowerCase(Locale.ROOT).contains(q)) return true;
-        if (cmd.id().toLowerCase(Locale.ROOT).contains(q)) return true;
-        if (cmd.description().toLowerCase(Locale.ROOT).contains(q)) return true;
-        for (String alias : cmd.aliases()) {
-            if (alias.toLowerCase(Locale.ROOT).contains(q)) return true;
-        }
-        for (WeCommands.Usage usage : cmd.usages()) {
-            if (usage.displayTemplate().toLowerCase(Locale.ROOT).contains(q)) return true;
-            if (usage.description() != null && usage.description().toLowerCase(Locale.ROOT).contains(q)) return true;
-        }
-        return false;
     }
 
     @Override

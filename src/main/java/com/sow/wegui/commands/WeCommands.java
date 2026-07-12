@@ -648,7 +648,7 @@ public final class WeCommands {
                         new Param("-o 粘贴到原点", ParamType.FLAG, "-o", true)));
         register("rotate", "旋转", "旋转剪贴板内容", param("rotate", "//rotate", "//rotate <角度>", "旋转剪贴板", new Param("角度", ParamType.INTEGER, "90")));
         register("flip", "翻转", "翻转剪贴板内容", param("flip", "//flip", "//flip [方向]", "翻转剪贴板", DIRECTION));
-        register("clearclipboard", "清空剪贴板", "清空剪贴板", instant("clearclipboard", "//clearclipboard", "清空剪贴板"));
+        register("clearclipboard", "清空剪贴板", "清空剪贴板", instant("clearclipboard", "/clearclipboard", "清空剪贴板"));
     }
 
     private static void registerSuperPickaxe() {

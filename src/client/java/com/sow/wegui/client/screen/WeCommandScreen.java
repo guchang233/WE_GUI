@@ -2,6 +2,7 @@ package com.sow.wegui.client.screen;
 
 import com.sow.wegui.client.CommandHistory;
 import com.sow.wegui.client.CommandSender;
+import com.sow.wegui.client.util.CommandMatcher;
 import com.sow.wegui.commands.WeCommands;
 import com.sow.wegui.commands.WeCommands.Category;
 import com.sow.wegui.commands.WeCommands.Command;
@@ -13,9 +14,11 @@ import fi.dy.masa.malilib.gui.interfaces.ISelectionListener;
 import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.util.StringUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,6 +44,8 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
     private int categoryScrollOffset = 0;
     private int categoryMaxScroll = 0;
     private int categoryEntryCount = 0;
+    private boolean scrollbarDragging = false;
+    private double scrollbarDragOffset = 0;
 
     public WeCommandScreen() {
         super(PADDING + SIDE_BAR_WIDTH, TOP_BAR_HEIGHT);
@@ -208,7 +213,7 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
 
         int allCount = 0;
         for (Command cmd : WeCommands.all()) {
-            if (matches(cmd, query)) allCount++;
+            if (CommandMatcher.matches(cmd, query)) allCount++;
         }
         entries.add(new FilterEntry(FilterMode.ALL, null, StringUtils.translate("wegui.command.category.all"), allCount));
 
@@ -217,29 +222,13 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
             if (cmds.isEmpty()) continue;
             int count = 0;
             for (Command cmd : cmds) {
-                if (matches(cmd, query)) count++;
+                if (CommandMatcher.matches(cmd, query)) count++;
             }
             entries.add(new FilterEntry(FilterMode.CATEGORY, category,
                     Component.translatable(category.getTranslationKey()).getString(), count));
         }
 
         return entries;
-    }
-
-    private boolean matches(Command cmd, String query) {
-        if (query.isBlank()) return true;
-        String q = query.toLowerCase(Locale.ROOT);
-        if (cmd.displayName().toLowerCase(Locale.ROOT).contains(q)) return true;
-        if (cmd.id().toLowerCase(Locale.ROOT).contains(q)) return true;
-        if (cmd.description().toLowerCase(Locale.ROOT).contains(q)) return true;
-        for (String alias : cmd.aliases()) {
-            if (alias.toLowerCase(Locale.ROOT).contains(q)) return true;
-        }
-        for (WeCommands.Usage usage : cmd.usages()) {
-            if (usage.displayTemplate().toLowerCase(Locale.ROOT).contains(q)) return true;
-            if (usage.description() != null && usage.description().toLowerCase(Locale.ROOT).contains(q)) return true;
-        }
-        return false;
     }
 
     private void addBottomButtons() {
@@ -344,6 +333,31 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
         ctx.fill(trackX, thumbY, trackX + CATEGORY_SCROLLBAR_WIDTH, thumbY + thumbH, 0xFF888888);
     }
 
+    /**
+     * 返回当前 scrollbar thumb 的 Y 坐标与高度。
+     * 若 categoryMaxScroll == 0 或不可见，返回 null。
+     */
+    private int[] getScrollbarThumbGeometry() {
+        if (categoryMaxScroll <= 0) return null;
+        int visibleTop = TOP_BAR_HEIGHT;
+        int visibleBottom = this.height - BOTTOM_BAR_HEIGHT;
+        int availableHeight = visibleBottom - visibleTop;
+        int totalHeight = categoryButtons.size() * CATEGORY_ENTRY_HEIGHT;
+        int thumbH = Math.max(20, availableHeight * availableHeight / totalHeight);
+        int trackY = visibleTop;
+        int thumbY = trackY + categoryScrollOffset * (availableHeight - thumbH) / categoryMaxScroll;
+        return new int[]{thumbY, thumbH, trackY, availableHeight};
+    }
+
+    private boolean isInScrollbarTrack(double mouseX, double mouseY) {
+        if (categoryMaxScroll <= 0) return false;
+        int visibleTop = TOP_BAR_HEIGHT;
+        int visibleBottom = this.height - BOTTOM_BAR_HEIGHT;
+        int trackX = PADDING + SIDE_BAR_WIDTH - CATEGORY_SCROLLBAR_WIDTH - 2;
+        return mouseX >= trackX && mouseX < trackX + CATEGORY_SCROLLBAR_WIDTH &&
+               mouseY >= visibleTop && mouseY < visibleBottom;
+    }
+
     @Override
     public boolean onMouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         int visibleTop = TOP_BAR_HEIGHT;
@@ -355,6 +369,66 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
             return true;
         }
         return super.onMouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean onMouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && isInScrollbarTrack(event.x(), event.y())) {
+            int[] geo = getScrollbarThumbGeometry();
+            if (geo == null) {
+                return super.onMouseClicked(event, doubleClick);
+            }
+            int thumbY = geo[0];
+            int thumbH = geo[1];
+            int trackY = geo[2];
+            int availableHeight = geo[3];
+            if (event.y() >= thumbY && event.y() < thumbY + thumbH) {
+                // 点击落在 thumb 上：记录偏移
+                scrollbarDragOffset = event.y() - thumbY;
+            } else {
+                // 点击落在 track 上：跳转 thumb 使其中心对齐 mouseY
+                scrollbarDragOffset = thumbH / 2.0;
+                updateScrollFromThumbY(event.y() - scrollbarDragOffset, thumbH, trackY, availableHeight);
+            }
+            scrollbarDragging = true;
+            return true;
+        }
+        return super.onMouseClicked(event, doubleClick);
+    }
+
+    private void updateScrollFromThumbY(double newThumbY, int thumbH, int trackY, int availableHeight) {
+        if (categoryMaxScroll <= 0) return;
+        int movable = availableHeight - thumbH;
+        if (movable <= 0) return;
+        double relativeY = newThumbY - trackY;
+        relativeY = Math.max(0, Math.min(relativeY, movable));
+        int newOffset = (int) Math.round(relativeY * categoryMaxScroll / movable);
+        newOffset = roundDownToMultiple(Math.max(0, Math.min(newOffset, categoryMaxScroll)), CATEGORY_ENTRY_HEIGHT);
+        categoryScrollOffset = newOffset;
+        updateCategoryButtonPositions();
+    }
+
+    @Override
+    public boolean onMouseDragged(MouseButtonEvent event, double deltaX, double deltaY) {
+        if (scrollbarDragging) {
+            int[] geo = getScrollbarThumbGeometry();
+            if (geo == null) return true;
+            int thumbH = geo[1];
+            int trackY = geo[2];
+            int availableHeight = geo[3];
+            updateScrollFromThumbY(event.y() - scrollbarDragOffset, thumbH, trackY, availableHeight);
+            return true;
+        }
+        return super.onMouseDragged(event, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean onMouseReleased(MouseButtonEvent event) {
+        if (scrollbarDragging) {
+            scrollbarDragging = false;
+            return true;
+        }
+        return super.onMouseReleased(event);
     }
 
     @Override
