@@ -50,7 +50,7 @@
 
 <img width="600" height="450" alt="QQ20260712-012228" src="https://github.com/user-attachments/assets/9d1b1eea-3f0d-4558-84da-436b30569ee4" />
 
-⬆️快捷轮盘样式。
+⬆️打开GUI后，点击指令左侧⭐️按钮即可将其添加至收藏。打开轮盘可快捷使用收藏的指令。轮盘单页最多6项，若超过则新增页
 
 
 [YouTube](https://www.youtube-nocookie.com/embed/qq780XHGRP8)
