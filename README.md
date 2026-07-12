@@ -28,27 +28,27 @@
 # 预览
 
 
-<img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/1b2733e2-fb77-42eb-94ac-bd70d6d9b1a8" />
+<img width="600" height="450" alt="QQ20260711-143237" src="https://pica.zhimg.com/v2-7040a65d39503dc3b3b365f41241decc_b.webp" />
 
 
 ⬆️在执行 `//copy` 之后，你可以看到该结构在下一次执行 `//paste` 时会出现在哪里。如果执行了 `//rotate` 或 `//flip` 操作，渲染效果将相应地更新。
 
 ---
 
-<img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/d04eaae7-dae6-48ae-acf4-f704e0dc3af3" />
+<img width="600" height="450" alt="QQ20260711-143237" src="https://pic2.zhimg.com/v2-3f1041a43b555d06599459b62c1be303_b.webp" />
 
 ⬆️在执行 `//copy` 之后，你可以使用ctrl+滚轮切换模式至“移动粘贴位置”模式，让你可以像投影模组的原理图放置模式一样移动剪切板中的结构。
 
 ---
 
-<img width="600" height="450" alt="QQ20260711-143237" src="https://github.com/user-attachments/assets/b1d6cf64-7c16-4f68-aa59-7e42620a12dc" />
+<img width="600" height="450" alt="QQ20260711-143237" src="https://pic2.zhimg.com/v2-2259db39efdf987eea8ff6a8a43095bf_b.webp" />
 
 
 ⬆️正在努力优化GUI样式。
 
 ---
 
-<img width="600" height="450" alt="QQ20260712-012228" src="https://github.com/user-attachments/assets/9d1b1eea-3f0d-4558-84da-436b30569ee4" />
+<img width="600" height="450" alt="QQ20260712-012228" src="https://picx.zhimg.com/v2-ad87309c5e3d4ab1f55773242dc6c9e9_b.webp" />
 
 ⬆️打开GUI后，点击指令左侧⭐️按钮即可将其添加至收藏。打开轮盘可快捷使用收藏的指令。轮盘单页最多6项，若超过则新增页
 
