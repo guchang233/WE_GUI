@@ -1,0 +1,75 @@
+﻿Compiled from "MixinWorldRenderer.java"
+public abstract class fi.dy.masa.malilib.mixin.render.MixinWorldRenderer {
+  private net.minecraft.class_310 field_4088;
+
+  private net.minecraft.class_9960 field_53081;
+
+  private net.minecraft.class_4599 field_20951;
+
+  public fi.dy.masa.malilib.mixin.render.MixinWorldRenderer();
+    Code:
+       0: aload_0
+       1: invokespecial #27                 // Method java/lang/Object."<init>":()V
+       4: return
+
+  private void malilib_onRenderWorldPreWeather(net.minecraft.class_9922, net.minecraft.class_9779, boolean, net.minecraft.class_4184, org.joml.Matrix4f, org.joml.Matrix4f, org.joml.Matrix4f, com.mojang.blaze3d.buffers.GpuBufferSlice, org.joml.Vector4f, boolean, org.spongepowered.asm.mixin.injection.callback.CallbackInfo, net.minecraft.class_3695, net.minecraft.class_4604, net.minecraft.class_9909);
+    Code:
+       0: invokestatic  #60                 // Method fi/dy/masa/malilib/event/RenderEventHandler.getInstance:()Lfi/dy/masa/malilib/interfaces/IRenderDispatcher;
+       3: checkcast     #56                 // class fi/dy/masa/malilib/event/RenderEventHandler
+       6: aload         6
+       8: aload         7
+      10: aload_0
+      11: getfield      #62                 // Field field_4088:Lnet/minecraft/class_310;
+      14: aload         14
+      16: aload_0
+      17: getfield      #64                 // Field field_53081:Lnet/minecraft/class_9960;
+      20: aload         13
+      22: aload         4
+      24: aload_0
+      25: getfield      #66                 // Field field_20951:Lnet/minecraft/class_4599;
+      28: aload         12
+      30: invokevirtual #70                 // Method fi/dy/masa/malilib/event/RenderEventHandler.runRenderWorldPreWeather:(Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;Lnet/minecraft/class_310;Lnet/minecraft/class_9909;Lnet/minecraft/class_9960;Lnet/minecraft/class_4604;Lnet/minecraft/class_4184;Lnet/minecraft/class_4599;Lnet/minecraft/class_3695;)V
+      33: return
+
+  private void malilib_onRenderWorldLast(net.minecraft.class_9922, net.minecraft.class_9779, boolean, net.minecraft.class_4184, org.joml.Matrix4f, org.joml.Matrix4f, org.joml.Matrix4f, com.mojang.blaze3d.buffers.GpuBufferSlice, org.joml.Vector4f, boolean, org.spongepowered.asm.mixin.injection.callback.CallbackInfo, net.minecraft.class_3695, net.minecraft.class_4604, net.minecraft.class_9909);
+    Code:
+       0: invokestatic  #60                 // Method fi/dy/masa/malilib/event/RenderEventHandler.getInstance:()Lfi/dy/masa/malilib/interfaces/IRenderDispatcher;
+       3: checkcast     #56                 // class fi/dy/masa/malilib/event/RenderEventHandler
+       6: aload         6
+       8: aload         7
+      10: aload_0
+      11: getfield      #62                 // Field field_4088:Lnet/minecraft/class_310;
+      14: aload         14
+      16: aload_0
+      17: getfield      #64                 // Field field_53081:Lnet/minecraft/class_9960;
+      20: aload         13
+      22: aload         4
+      24: aload_0
+      25: getfield      #66                 // Field field_20951:Lnet/minecraft/class_4599;
+      28: aload         12
+      30: invokevirtual #85                 // Method fi/dy/masa/malilib/event/RenderEventHandler.runRenderWorldLast:(Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;Lnet/minecraft/class_310;Lnet/minecraft/class_9909;Lnet/minecraft/class_9960;Lnet/minecraft/class_4604;Lnet/minecraft/class_4184;Lnet/minecraft/class_4599;Lnet/minecraft/class_3695;)V
+      33: return
+
+  private void malilib_verifyRenderTransparencyFix(org.spongepowered.asm.mixin.injection.callback.CallbackInfo);
+    Code:
+       0: getstatic     #93                 // Field fi/dy/masa/malilib/MaLiLibConfigs$Generic.RENDER_TRANSPARENCY_FIX:Lfi/dy/masa/malilib/config/options/ConfigBooleanHotkeyed;
+       3: invokevirtual #99                 // Method fi/dy/masa/malilib/config/options/ConfigBooleanHotkeyed.getBooleanValue:()Z
+       6: ifeq          48
+       9: aload_0
+      10: getfield      #62                 // Field field_4088:Lnet/minecraft/class_310;
+      13: getfield      #105                // Field net/minecraft/class_310.field_1690:Lnet/minecraft/class_315;
+      16: invokevirtual #111                // Method net/minecraft/class_315.method_75337:()Lnet/minecraft/class_7172;
+      19: invokevirtual #117                // Method net/minecraft/class_7172.method_41753:()Ljava/lang/Object;
+      22: checkcast     #119                // class java/lang/Boolean
+      25: invokevirtual #122                // Method java/lang/Boolean.booleanValue:()Z
+      28: ifeq          48
+      31: aload_0
+      32: getfield      #62                 // Field field_4088:Lnet/minecraft/class_310;
+      35: getfield      #105                // Field net/minecraft/class_310.field_1690:Lnet/minecraft/class_315;
+      38: invokevirtual #111                // Method net/minecraft/class_315.method_75337:()Lnet/minecraft/class_7172;
+      41: iconst_0
+      42: invokestatic  #126                // Method java/lang/Boolean.valueOf:(Z)Ljava/lang/Boolean;
+      45: invokevirtual #130                // Method net/minecraft/class_7172.method_41748:(Ljava/lang/Object;)V
+      48: return
+}
+

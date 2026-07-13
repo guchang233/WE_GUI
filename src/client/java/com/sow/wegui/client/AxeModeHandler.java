@@ -222,9 +222,21 @@ public final class AxeModeHandler {
             return true;
         }
 
-        pastePreviewOffset = pastePreviewOffset.relative(direction, amount);
-        player.displayClientMessage(Component.translatable("wegui.message.moved_paste_preview",
-                formatPos(pastePreviewOffset)).withStyle(ChatFormatting.GREEN), true);
+        // 固定模式下移动 fixedOrigin（不随玩家移动，但可手动移动）
+        // 随玩家移动模式下移动 pastePreviewOffset
+        if (PastePreviewRenderer.isFixedMode()) {
+            BlockPos fixedOrigin = PastePreviewRenderer.getFixedOrigin();
+            if (fixedOrigin != null) {
+                BlockPos moved = fixedOrigin.relative(direction, amount);
+                PastePreviewRenderer.setFixedOrigin(moved);
+                player.displayClientMessage(Component.translatable("wegui.message.moved_paste_preview",
+                        formatPos(moved)).withStyle(ChatFormatting.GREEN), true);
+            }
+        } else {
+            pastePreviewOffset = pastePreviewOffset.relative(direction, amount);
+            player.displayClientMessage(Component.translatable("wegui.message.moved_paste_preview",
+                    formatPos(pastePreviewOffset)).withStyle(ChatFormatting.GREEN), true);
+        }
         return true;
     }
 

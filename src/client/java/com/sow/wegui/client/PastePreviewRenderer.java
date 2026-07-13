@@ -18,6 +18,7 @@ import com.sow.wegui.WeGuiMod;
 import com.sow.wegui.client.mixin.RenderTypeAccessor;
 import com.sow.wegui.config.Configs;
 import com.sow.wegui.config.PastePlacementMode;
+import com.sow.wegui.config.RenderStylePreset;
 import fi.dy.masa.malilib.interfaces.IRenderer;
 import fi.dy.masa.malilib.render.MaLiLibPipelines;
 import fi.dy.masa.malilib.render.RenderContext;
@@ -42,12 +43,16 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -116,6 +121,9 @@ public final class PastePreviewRenderer implements IRenderer {
     @Nullable
     private BlockPos fixedOrigin = null;
     private PastePlacementMode lastMode = PastePlacementMode.FOLLOW_PLAYER;
+
+    // ---- 渲染风格预设 ----
+    private RenderStylePreset lastPreset = RenderStylePreset.DEFAULT;
 
     private PastePreviewRenderer() {}
 
@@ -212,6 +220,77 @@ public final class PastePreviewRenderer implements IRenderer {
     }
 
     // ========================================================================
+    // 渲染风格预设
+    // ========================================================================
+
+    /**
+     * 检测渲染风格预设变化，变化时批量应用对应的配色和参数。
+     * 在每帧渲染时调用。
+     */
+    private void checkPresetChange() {
+        RenderStylePreset current = (RenderStylePreset) Configs.PastePreview.RENDER_STYLE_PRESET.getOptionListValue();
+        if (current != lastPreset) {
+            applyPreset(current);
+            lastPreset = current;
+        }
+    }
+
+    /**
+     * 应用渲染风格预设，批量设置配色和参数。
+     * 使用 setValueFromString 传入 "#RRGGBBAA" 格式。
+     */
+    private void applyPreset(RenderStylePreset preset) {
+        WeGuiMod.LOGGER.info("[WE GUI] 应用渲染风格预设: {}", preset.getStringValue());
+        switch (preset) {
+            case LITEMATICA -> {
+                // Litematica 投影模组风格：实心 schematic blocks + per-block 染色 overlay + 无 paste box 面
+                Configs.PastePreview.SELECTION_BOX_COLOR.setValueFromString("#FFFFFFFF");
+                Configs.PastePreview.SELECTION_POS1_COLOR.setValueFromString("#FF0000FF");
+                Configs.PastePreview.SELECTION_POS2_COLOR.setValueFromString("#0000FFFF");
+                Configs.PastePreview.BLOCK_OUTLINE_COLOR.setValueFromString("#00FFFFFF");
+                Configs.PastePreview.BOX_SIDE_COLOR.setValueFromString("#00FFFF33");
+                // 仿 Litematica: RENDER_BLOCKS_AS_TRANSLUCENT=false（实心），GHOST_BLOCK_ALPHA 仅半透明模式生效
+                Configs.PastePreview.GHOST_BLOCK_SOLID.setBooleanValue(true);
+                Configs.PastePreview.GHOST_BLOCK_ALPHA.setDoubleValue(0.5);
+                // 仿 Litematica: RENDER_PLACEMENT_BOX_SIDES=false（仅线框，无半透明面）
+                Configs.PastePreview.BOX_SIDE_ALPHA.setDoubleValue(0.0);
+                Configs.Generic.BLOCK_OUTLINE_ENABLED.setBooleanValue(true);
+                // Litematica 方块验证配色（边框 alpha=1.0）：
+                // 正确=绿、缺失=青、错方块=红、错状态=橙、多余=品红
+                Configs.PastePreview.VERIFY_CORRECT_COLOR.setValueFromString("#11FF11FF");
+                Configs.PastePreview.VERIFY_MISSING_COLOR.setValueFromString("#00FFFFFF");
+                Configs.PastePreview.VERIFY_WRONG_BLOCK_COLOR.setValueFromString("#FF0000FF");
+                Configs.PastePreview.VERIFY_WRONG_STATE_COLOR.setValueFromString("#FFAF00FF");
+                Configs.PastePreview.VERIFY_EXTRA_COLOR.setValueFromString("#FF00CFFF");
+                Configs.Generic.BLOCK_VERIFICATION_ENABLED.setBooleanValue(true);
+                // 仿 Litematica: RENDER_ERROR_MARKER_SIDES=true（x-ray 透视填充面）
+                Configs.PastePreview.VERIFY_RENDER_SIDES.setBooleanValue(true);
+                Configs.PastePreview.VERIFY_HILIGHT_ALPHA.setDoubleValue(0.2);
+                // 仿 Litematica: SCHEMATIC_OVERLAY_ENABLE_SIDES=true（带深度染色面，落地感）
+                Configs.PastePreview.SCHEMATIC_OVERLAY_ENABLE_SIDES.setBooleanValue(true);
+                Configs.PastePreview.SCHEMATIC_OVERLAY_SIDE_ALPHA.setDoubleValue(0.2);
+            }
+            case DEFAULT -> {
+                // WeGui 原始风格：黄色选区框、绿色半透明面、每方块边框关闭
+                Configs.PastePreview.SELECTION_BOX_COLOR.setValueFromString("#FFD100FF");
+                Configs.PastePreview.SELECTION_POS1_COLOR.setValueFromString("#FF0F0FFF");
+                Configs.PastePreview.SELECTION_POS2_COLOR.setValueFromString("#0F0FFFFF");
+                Configs.PastePreview.BLOCK_OUTLINE_COLOR.setValueFromString("#00FFFFFF");
+                Configs.PastePreview.BOX_SIDE_COLOR.setValueFromString("#00FF8033");
+                Configs.PastePreview.GHOST_BLOCK_SOLID.setBooleanValue(false);
+                Configs.PastePreview.GHOST_BLOCK_ALPHA.setDoubleValue(0.5);
+                Configs.PastePreview.BOX_SIDE_ALPHA.setDoubleValue(0.2);
+                Configs.Generic.BLOCK_OUTLINE_ENABLED.setBooleanValue(false);
+                Configs.Generic.BLOCK_VERIFICATION_ENABLED.setBooleanValue(false);
+                Configs.PastePreview.VERIFY_RENDER_SIDES.setBooleanValue(true);
+                Configs.PastePreview.VERIFY_HILIGHT_ALPHA.setDoubleValue(0.2);
+                Configs.PastePreview.SCHEMATIC_OVERLAY_ENABLE_SIDES.setBooleanValue(false);
+                Configs.PastePreview.SCHEMATIC_OVERLAY_SIDE_ALPHA.setDoubleValue(0.2);
+            }
+        }
+    }
+
+    // ========================================================================
     // 层 ③：ghost blocks（BEFORE_TRANSLUCENT）
     // ========================================================================
 
@@ -228,6 +307,9 @@ public final class PastePreviewRenderer implements IRenderer {
         if (mc.player == null || mc.level == null) return;
         if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) return;
 
+        // 检测渲染风格预设变化
+        checkPresetChange();
+
         // 检测放置模式变化
         PastePlacementMode currentMode = (PastePlacementMode) Configs.PastePreview.PASTE_PLACEMENT_MODE.getOptionListValue();
         if (currentMode != lastMode) {
@@ -242,7 +324,11 @@ public final class PastePreviewRenderer implements IRenderer {
         // 确保 chunk 缓存有效
         ensureChunkCache(blocks, origin);
 
-        float alpha = (float) Configs.PastePreview.GHOST_BLOCK_ALPHA.getDoubleValue();
+        // 实心模式（仿 Litematica RENDER_BLOCKS_AS_TRANSLUCENT=false）：使用原生 RenderType，
+        // 方块以完整不透明度渲染（SOLID/CUTOUT/CUTOUT_MIPPED/TRANSLUCENT 各自正确）。
+        // 半透明模式：使用 AlphaMultiBufferSource 统一施加 alpha 倍率。
+        boolean solid = Configs.PastePreview.GHOST_BLOCK_SOLID.getBooleanValue();
+        float alpha = solid ? 1.0f : (float) Configs.PastePreview.GHOST_BLOCK_ALPHA.getDoubleValue();
         if (alpha <= 0.0f) return;
 
         int renderDistance = Configs.PastePreview.GHOST_RENDER_DISTANCE.getIntegerValue();
@@ -259,7 +345,8 @@ public final class PastePreviewRenderer implements IRenderer {
             pose.popPose();
             return;
         }
-        AlphaMultiBufferSource alphaSource = new AlphaMultiBufferSource(source, alpha);
+        // 实心模式直接用 source（vanilla RenderType）；半透明模式用 AlphaMultiBufferSource
+        MultiBufferSource renderSource = solid ? source : new AlphaMultiBufferSource(source, alpha);
 
         for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
             // 距离剔除（按 chunk section 中心）
@@ -277,7 +364,7 @@ public final class PastePreviewRenderer implements IRenderer {
                     BlockState state = states.get(i);
                     pose.pushPose();
                     pose.translate(target.getX(), target.getY(), target.getZ());
-                    dispatcher.renderSingleBlock(state, pose, alphaSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+                    dispatcher.renderSingleBlock(state, pose, renderSource, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
                     pose.popPose();
                 } catch (Throwable e) {
                     WeGuiMod.LOGGER.debug("跳过无法渲染的预览方块: {}", e.toString());
@@ -330,10 +417,11 @@ public final class PastePreviewRenderer implements IRenderer {
                 renderPasteBox(frustum);
                 profiler.pop();
 
-                // 层 ④：每方块边框
-                if (Configs.Generic.BLOCK_OUTLINE_ENABLED.getBooleanValue()) {
+                // 层 ④：每方块边框（或方块验证着色）
+                if (Configs.Generic.BLOCK_OUTLINE_ENABLED.getBooleanValue()
+                        || Configs.Generic.BLOCK_VERIFICATION_ENABLED.getBooleanValue()) {
                     profiler.push("block_outlines");
-                    renderBlockOutlinesBatched(frustum, camera, origin);
+                    renderBlockOutlinesBatched(frustum, camera, origin, mc.level);
                     profiler.pop();
                 }
             }
@@ -420,50 +508,239 @@ public final class PastePreviewRenderer implements IRenderer {
     // 层 ④：每方块边框（batched，frustum 剔除）
     // ------------------------------------------------------------------
 
-    private void renderBlockOutlinesBatched(Frustum frustum, Camera camera, BlockPos origin) {
+    /**
+     * 方块验证状态（仿 Litematica BlockInfoList）。
+     * 对比剪贴板期望状态与世界实际状态，得出 5 种结果：
+     * - CORRECT：方块类型与状态完全一致
+     * - MISSING：期望非空气，但世界中为空气
+     * - WRONG_BLOCK：方块类型不同
+     * - WRONG_STATE：方块类型相同但状态不同（如朝向、半边等）
+     * - EXTRA：期望为空气，但世界中存在方块（多余方块）
+     */
+    private enum BlockMatchStatus {
+        CORRECT, MISSING, WRONG_BLOCK, WRONG_STATE, EXTRA
+    }
+
+    /**
+     * 对比期望方块状态与世界实际方块状态，返回验证结果。
+     * 判断逻辑与 Litematica BlockInfoList 一致。
+     */
+    private BlockMatchStatus verifyBlock(BlockState expected, BlockState found) {
+        boolean expectedAir = expected.isAir();
+        boolean foundAir = found.isAir();
+        if (expectedAir && foundAir) {
+            return BlockMatchStatus.CORRECT;
+        }
+        if (expectedAir && !foundAir) {
+            return BlockMatchStatus.EXTRA;
+        }
+        if (!expectedAir && foundAir) {
+            return BlockMatchStatus.MISSING;
+        }
+        // 两者均非空气
+        if (expected.getBlock() != found.getBlock()) {
+            return BlockMatchStatus.WRONG_BLOCK;
+        }
+        if (!expected.equals(found)) {
+            return BlockMatchStatus.WRONG_STATE;
+        }
+        return BlockMatchStatus.CORRECT;
+    }
+
+    /** 根据验证状态返回对应的渲染颜色（读取配置） */
+    private Color4f getVerifyColor(BlockMatchStatus status) {
+        var c = switch (status) {
+            case CORRECT -> Configs.PastePreview.VERIFY_CORRECT_COLOR.getColor();
+            case MISSING -> Configs.PastePreview.VERIFY_MISSING_COLOR.getColor();
+            case WRONG_BLOCK -> Configs.PastePreview.VERIFY_WRONG_BLOCK_COLOR.getColor();
+            case WRONG_STATE -> Configs.PastePreview.VERIFY_WRONG_STATE_COLOR.getColor();
+            case EXTRA -> Configs.PastePreview.VERIFY_EXTRA_COLOR.getColor();
+        };
+        return new Color4f(c.r, c.g, c.b, c.a);
+    }
+
+    /**
+     * 获取玩家当前注视的方块位置（仅在注视方块时返回非 null）。
+     * 用于 Litematica 风格的注视方块加粗渲染。
+     */
+    @Nullable
+    private BlockPos getLookPos(Minecraft mc) {
+        if (mc.hitResult != null && mc.hitResult.getType() == HitResult.Type.BLOCK) {
+            return ((BlockHitResult) mc.hitResult).getBlockPos();
+        }
+        return null;
+    }
+
+    /**
+     * 渲染每方块边框 / 方块验证着色，1:1 复刻 Litematica 三层渲染架构：
+     *
+     * 层1: 边框线 (batched_lines) — 所有 mismatch 方块（排除注视方块），lineWidth=2.0f
+     * 层2: 注视方块加粗 (outlines) — 仅注视的 mismatch 方块，lineWidth=6.0f
+     * 层3: 半透明填充面 (side_quads) — 所有 mismatch 方块，alpha=VERIFY_HILIGHT_ALPHA
+     *
+     * 非验证模式：仅渲染层1（单一颜色，lineWidth=2.0f）。
+     */
+    private void renderBlockOutlinesBatched(Frustum frustum, Camera camera, BlockPos origin, Level level) {
         if (chunkCache.isEmpty()) return;
 
-        var c = Configs.PastePreview.BLOCK_OUTLINE_COLOR.getColor();
-        Color4f color = new Color4f(c.r, c.g, c.b, c.a);
+        Minecraft mc = Minecraft.getInstance();
+        boolean verify = Configs.Generic.BLOCK_VERIFICATION_ENABLED.getBooleanValue();
+
+        // 非验证模式使用单一颜色；验证模式按状态着色
+        Color4f singleColor = null;
+        if (!verify) {
+            var c = Configs.PastePreview.BLOCK_OUTLINE_COLOR.getColor();
+            singleColor = new Color4f(c.r, c.g, c.b, c.a);
+        }
+
         int renderDistance = Configs.PastePreview.GHOST_RENDER_DISTANCE.getIntegerValue();
         double renderDistSq = (double) renderDistance * renderDistance;
         Vec3 camPos = camera.position();
 
-        RenderContext ctx = new RenderContext(
-                () -> "wegui:block_outlines",
-                MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL);
-        BufferBuilder buffer = ctx.start(
-                () -> "wegui:block_outlines",
-                MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL);
+        // 验证模式下获取注视方块位置
+        BlockPos lookPos = verify ? getLookPos(mc) : null;
+        BlockPos lookedTarget = null;  // 注视的 mismatch 方块位置
+        Color4f lookedColor = null;    // 注视方块的颜色
 
-        for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
-            // frustum 剔除
-            if (!frustum.isVisible(group.worldAabb)) continue;
+        // 用于层3填充面 pass 的复用：收集 mismatch 方块位置和颜色
+        List<BlockPos> mismatchPositions = new ArrayList<>();
+        List<Color4f> mismatchColors = new ArrayList<>();
 
-            // 距离剔除
-            double cx = (group.worldAabb.minX + group.worldAabb.maxX) * 0.5;
-            double cy = (group.worldAabb.minY + group.worldAabb.maxY) * 0.5;
-            double cz = (group.worldAabb.minZ + group.worldAabb.maxZ) * 0.5;
-            double distSq = (cx - camPos.x) * (cx - camPos.x)
-                    + (cy - camPos.y) * (cy - camPos.y)
-                    + (cz - camPos.z) * (cz - camPos.z);
-            if (distSq > renderDistSq) continue;
+        // ========== 层1: 边框线 ==========
+        try (RenderContext ctx = new RenderContext(
+                () -> "wegui:block_outlines/batched_lines",
+                MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL)) {
+            BufferBuilder buffer = ctx.start(
+                    () -> "wegui:block_outlines/batched_lines",
+                    MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL);
+            float lineWidth = 2.0f;
 
-            List<BlockPos> positions = group.relPositions;
-            for (BlockPos rel : positions) {
-                BlockPos target = origin.offset(rel);
-                RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(target, color, 0.002, 1.5f, buffer);
+            for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
+                // frustum 剔除
+                if (!frustum.isVisible(group.worldAabb)) continue;
+
+                // 距离剔除（按 chunk section 中心）
+                double cx = (group.worldAabb.minX + group.worldAabb.maxX) * 0.5;
+                double cy = (group.worldAabb.minY + group.worldAabb.maxY) * 0.5;
+                double cz = (group.worldAabb.minZ + group.worldAabb.maxZ) * 0.5;
+                double distSq = (cx - camPos.x) * (cx - camPos.x)
+                        + (cy - camPos.y) * (cy - camPos.y)
+                        + (cz - camPos.z) * (cz - camPos.z);
+                if (distSq > renderDistSq) continue;
+
+                List<BlockPos> positions = group.relPositions;
+                for (BlockPos rel : positions) {
+                    BlockPos target = origin.offset(rel);
+                    Color4f color;
+                    if (verify) {
+                        BlockState expected = cachedBlocks != null ? cachedBlocks.get(rel) : null;
+                        if (expected == null) {
+                            // 无期望状态（剪贴板未缓存该方块），跳过
+                            continue;
+                        }
+                        BlockState found = level.getBlockState(target);
+                        BlockMatchStatus status = verifyBlock(expected, found);
+                        if (status == BlockMatchStatus.CORRECT) {
+                            // 跳过 CORRECT，不渲染（与 Litematica 一致）
+                            continue;
+                        }
+                        color = getVerifyColor(status);
+                        // 记录 mismatch 用于层3/层4填充面 pass
+                        mismatchPositions.add(target);
+                        mismatchColors.add(color);
+                        // 注视方块跳过单独渲染（层2加粗）
+                        if (lookPos != null && lookPos.equals(target)) {
+                            lookedTarget = target;
+                            lookedColor = color;
+                            continue;
+                        }
+                    } else {
+                        color = singleColor;
+                    }
+                    RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(target, color, 0.002, lineWidth, buffer);
+                }
+            }
+
+            try {
+                MeshData meshData = buffer.build();
+                if (meshData != null) {
+                    ctx.draw(meshData, false, true);
+                    meshData.close();
+                }
+                ctx.reset();
+            } catch (Exception ignored) {
+            }
+
+            // ========== 层2: 注视方块加粗 ==========
+            if (lookedTarget != null && lookedColor != null) {
+                BufferBuilder boldBuffer = ctx.start(
+                        () -> "wegui:block_outlines/outlines",
+                        MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL);
+                float boldLineWidth = 6.0f;
+                RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(lookedTarget, lookedColor, 0.002, boldLineWidth, boldBuffer);
+                try {
+                    MeshData meshData = boldBuffer.build();
+                    if (meshData != null) {
+                        ctx.draw(meshData, false, true);
+                        meshData.close();
+                    }
+                    ctx.reset();
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        // ========== 层3: 半透明填充面（仅验证模式，NO_DEPTH 透视）==========
+        if (verify && Configs.PastePreview.VERIFY_RENDER_SIDES.getBooleanValue()
+                && !mismatchPositions.isEmpty()) {
+            try (RenderContext sideCtx = new RenderContext(
+                    () -> "wegui:block_outlines/side_quads",
+                    MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT_NO_DEPTH_NO_CULL)) {
+                BufferBuilder sideBuffer = sideCtx.start(
+                        () -> "wegui:block_outlines/side_quads",
+                        MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT_NO_DEPTH_NO_CULL);
+                float sideAlpha = (float) Configs.PastePreview.VERIFY_HILIGHT_ALPHA.getDoubleValue();
+                for (int i = 0; i < mismatchPositions.size(); i++) {
+                    BlockPos pos = mismatchPositions.get(i);
+                    Color4f c = mismatchColors.get(i);
+                    Color4f sideColor = new Color4f(c.r, c.g, c.b, sideAlpha);
+                    RenderUtils.renderAreaSidesBatched(pos, pos, sideColor, 0.002, sideBuffer);
+                }
+                MeshData sideMesh = sideBuffer.build();
+                if (sideMesh != null) {
+                    sideCtx.draw(sideMesh, false, false);
+                    sideMesh.close();
+                }
+            } catch (Exception ignored) {
             }
         }
 
-        try {
-            MeshData meshData = buffer.build();
-            if (meshData != null) {
-                ctx.draw(meshData, false, true);
-                meshData.close();
+        // ========== 层4: 带深度半透明染色面（schematic overlay，仿 Litematica SCHEMATIC_OVERLAY_ENABLE_SIDES）==========
+        // 与层3的区别：使用 LEQUAL_DEPTH pipeline，染色面被世界几何遮挡（落地感），
+        // 而层3使用 NO_DEPTH_NO_CULL（透视，穿墙可见）。Litematica 同时渲染两者。
+        if (verify && Configs.PastePreview.SCHEMATIC_OVERLAY_ENABLE_SIDES.getBooleanValue()
+                && !mismatchPositions.isEmpty()) {
+            try (RenderContext overlayCtx = new RenderContext(
+                    () -> "wegui:block_outlines/schematic_overlay",
+                    MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT_LEQUAL_DEPTH)) {
+                BufferBuilder overlayBuffer = overlayCtx.start(
+                        () -> "wegui:block_outlines/schematic_overlay",
+                        MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT_LEQUAL_DEPTH);
+                float overlayAlpha = (float) Configs.PastePreview.SCHEMATIC_OVERLAY_SIDE_ALPHA.getDoubleValue();
+                for (int i = 0; i < mismatchPositions.size(); i++) {
+                    BlockPos pos = mismatchPositions.get(i);
+                    Color4f c = mismatchColors.get(i);
+                    Color4f overlayColor = new Color4f(c.r, c.g, c.b, overlayAlpha);
+                    RenderUtils.renderAreaSidesBatched(pos, pos, overlayColor, 0.002, overlayBuffer);
+                }
+                MeshData overlayMesh = overlayBuffer.build();
+                if (overlayMesh != null) {
+                    overlayCtx.draw(overlayMesh, false, false);
+                    overlayMesh.close();
+                }
+            } catch (Exception ignored) {
             }
-            ctx.reset();
-        } catch (Exception ignored) {
         }
     }
 

@@ -47,6 +47,7 @@ public class Configs implements IConfigHandler {
         public static final ConfigBooleanHotkeyed SELECTION_BOUNDS_ENABLED = new ConfigBooleanHotkeyed("selectionBoundsEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed SELECTION_MESSAGE_ENABLED = new ConfigBooleanHotkeyed("selectionMessageEnabled", false, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed BLOCK_OUTLINE_ENABLED = new ConfigBooleanHotkeyed("blockOutlineEnabled", false, "").apply(GENERIC_KEY);
+        public static final ConfigBooleanHotkeyed BLOCK_VERIFICATION_ENABLED = new ConfigBooleanHotkeyed("blockVerificationEnabled", false, "").apply(GENERIC_KEY);
         public static final ConfigString WAND_ITEM = new ConfigString("wandItem", "minecraft:wooden_axe").apply(GENERIC_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
@@ -55,6 +56,7 @@ public class Configs implements IConfigHandler {
                 SELECTION_BOUNDS_ENABLED,
                 SELECTION_MESSAGE_ENABLED,
                 BLOCK_OUTLINE_ENABLED,
+                BLOCK_VERIFICATION_ENABLED,
                 WAND_ITEM
         );
 
@@ -63,7 +65,8 @@ public class Configs implements IConfigHandler {
                 PASTE_PREVIEW_ENABLED,
                 SELECTION_BOUNDS_ENABLED,
                 SELECTION_MESSAGE_ENABLED,
-                BLOCK_OUTLINE_ENABLED
+                BLOCK_OUTLINE_ENABLED,
+                BLOCK_VERIFICATION_ENABLED
         );
     }
 
@@ -85,24 +88,47 @@ public class Configs implements IConfigHandler {
 
     public static class PastePreview {
         public static final ConfigOptionList PASTE_PLACEMENT_MODE = new ConfigOptionList("pastePlacementMode", PastePlacementMode.FOLLOW_PLAYER).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigOptionList RENDER_STYLE_PRESET = new ConfigOptionList("renderStylePreset", RenderStylePreset.DEFAULT).apply(PASTE_PREVIEW_KEY);
         public static final ConfigColor SELECTION_BOX_COLOR = new ConfigColor("selectionBoxColor", new Color4f(1.0f, 0.82f, 0.0f, 1.0f)).apply(PASTE_PREVIEW_KEY);
         public static final ConfigColor SELECTION_POS1_COLOR = new ConfigColor("selectionPos1Color", new Color4f(1.0f, 0.06f, 0.06f, 1.0f)).apply(PASTE_PREVIEW_KEY);
         public static final ConfigColor SELECTION_POS2_COLOR = new ConfigColor("selectionPos2Color", new Color4f(0.06f, 0.06f, 1.0f, 1.0f)).apply(PASTE_PREVIEW_KEY);
         public static final ConfigColor BLOCK_OUTLINE_COLOR = new ConfigColor("blockOutlineColor", new Color4f(0.0f, 1.0f, 1.0f, 1.0f)).apply(PASTE_PREVIEW_KEY);
         public static final ConfigColor BOX_SIDE_COLOR = new ConfigColor("boxSideColor", new Color4f(0.0f, 1.0f, 0.5f, 0.2f)).apply(PASTE_PREVIEW_KEY);
+        // 方块验证颜色（仿 Litematica）：正确=绿、缺失=青、错方块=红、错状态=橙、多余=品红
+        public static final ConfigColor VERIFY_CORRECT_COLOR = new ConfigColor("verifyCorrectColor", new Color4f(0.067f, 1.0f, 0.067f, 1.0f)).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigColor VERIFY_MISSING_COLOR = new ConfigColor("verifyMissingColor", new Color4f(0.0f, 1.0f, 1.0f, 1.0f)).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigColor VERIFY_WRONG_BLOCK_COLOR = new ConfigColor("verifyWrongBlockColor", new Color4f(1.0f, 0.0f, 0.0f, 1.0f)).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigColor VERIFY_WRONG_STATE_COLOR = new ConfigColor("verifyWrongStateColor", new Color4f(1.0f, 0.686f, 0.0f, 1.0f)).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigColor VERIFY_EXTRA_COLOR = new ConfigColor("verifyExtraColor", new Color4f(1.0f, 0.0f, 0.812f, 1.0f)).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigBoolean VERIFY_RENDER_SIDES = new ConfigBoolean("verifyRenderSides", true).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigDouble VERIFY_HILIGHT_ALPHA = new ConfigDouble("verifyHilightAlpha", 0.2, 0.0, 1.0).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigBoolean GHOST_BLOCK_SOLID = new ConfigBoolean("ghostBlockSolid", true).apply(PASTE_PREVIEW_KEY);
         public static final ConfigDouble GHOST_BLOCK_ALPHA = new ConfigDouble("ghostBlockAlpha", 0.5, 0.0, 1.0).apply(PASTE_PREVIEW_KEY);
         public static final ConfigDouble BOX_SIDE_ALPHA = new ConfigDouble("boxSideAlpha", 0.2, 0.0, 1.0).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigBoolean SCHEMATIC_OVERLAY_ENABLE_SIDES = new ConfigBoolean("schematicOverlayEnableSides", true).apply(PASTE_PREVIEW_KEY);
+        public static final ConfigDouble SCHEMATIC_OVERLAY_SIDE_ALPHA = new ConfigDouble("schematicOverlaySideAlpha", 0.2, 0.0, 1.0).apply(PASTE_PREVIEW_KEY);
         public static final ConfigInteger GHOST_RENDER_DISTANCE = new ConfigInteger("ghostRenderDistance", 64, 16, 256).apply(PASTE_PREVIEW_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 PASTE_PLACEMENT_MODE,
+                RENDER_STYLE_PRESET,
                 SELECTION_BOX_COLOR,
                 SELECTION_POS1_COLOR,
                 SELECTION_POS2_COLOR,
                 BLOCK_OUTLINE_COLOR,
                 BOX_SIDE_COLOR,
+                VERIFY_CORRECT_COLOR,
+                VERIFY_MISSING_COLOR,
+                VERIFY_WRONG_BLOCK_COLOR,
+                VERIFY_WRONG_STATE_COLOR,
+                VERIFY_EXTRA_COLOR,
+                VERIFY_RENDER_SIDES,
+                VERIFY_HILIGHT_ALPHA,
+                GHOST_BLOCK_SOLID,
                 GHOST_BLOCK_ALPHA,
                 BOX_SIDE_ALPHA,
+                SCHEMATIC_OVERLAY_ENABLE_SIDES,
+                SCHEMATIC_OVERLAY_SIDE_ALPHA,
                 GHOST_RENDER_DISTANCE
         );
     }
