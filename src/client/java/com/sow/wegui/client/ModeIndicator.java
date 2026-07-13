@@ -21,6 +21,12 @@ public final class ModeIndicator {
     private static final String[] cachedModeNames = new String[3];
     private static String cachedLanguage;
 
+    // 动态行缓存：仅在工具名或模式变化时重算，避免每帧 Component.translatable 调用
+    private static String lastToolName = null;
+    private static AxeModeHandler.AxeMode lastMode = null;
+    private static String cachedToolLine = "";
+    private static String cachedCurrentLine = "";
+
     private ModeIndicator() {}
 
     public static void register() {
@@ -44,6 +50,9 @@ public final class ModeIndicator {
             };
             cachedHints[i] = Component.translatable(hintKey).getString();
         }
+        // 重置动态行缓存，强制下次重算
+        lastToolName = null;
+        lastMode = null;
     }
 
     private static void render(GuiGraphics g, DeltaTracker tickCounter) {
@@ -64,10 +73,20 @@ public final class ModeIndicator {
             toolName = cachedUnknownTool;
         }
 
-        List<String> lines = new ArrayList<>();
+        // 仅在工具名或模式变化时重算带参行，避免每帧 Component.translatable 调用
+        if (!toolName.equals(lastToolName)) {
+            cachedToolLine = Component.translatable("wegui.mode.tool", toolName).getString();
+            lastToolName = toolName;
+        }
+        if (mode != lastMode) {
+            cachedCurrentLine = Component.translatable("wegui.mode.current", indicator + " " + modeName).getString();
+            lastMode = mode;
+        }
+
+        List<String> lines = new ArrayList<>(4);
         lines.add(cachedTitle);
-        lines.add(Component.translatable("wegui.mode.tool", toolName).getString());
-        lines.add(Component.translatable("wegui.mode.current", indicator + " " + modeName).getString());
+        lines.add(cachedToolLine);
+        lines.add(cachedCurrentLine);
         lines.add(cachedHints[mode.ordinal()]);
 
         int maxW = 0;

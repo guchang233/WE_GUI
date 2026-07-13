@@ -13,13 +13,22 @@ import org.jetbrains.annotations.Nullable;
 public final class WorldEditAdapter {
     private WorldEditAdapter() {}
 
+    /**
+     * WorldEdit 是否已加载。模组在启动阶段加载，运行时不会变化，因此只需检测一次。
+     */
+    private static volatile boolean loadedChecked = false;
+    private static volatile boolean loaded = false;
+
     public static boolean isLoaded() {
+        if (loadedChecked) return loaded;
         try {
             Class.forName("com.sk89q.worldedit.WorldEdit");
-            return true;
+            loaded = true;
         } catch (ClassNotFoundException e) {
-            return false;
+            loaded = false;
         }
+        loadedChecked = true;
+        return loaded;
     }
 
     @Nullable

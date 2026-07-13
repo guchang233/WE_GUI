@@ -43,6 +43,10 @@ public final class WorldEditBridge {
 
     private static java.lang.reflect.Field POSITION2_FIELD;
 
+    /** WorldEdit 版本号缓存，运行时不变，避免每次 capture 重复反射查询 */
+    private static volatile boolean versionChecked = false;
+    private static String cachedVersion = "";
+
     public static WeStatus capture(Minecraft mc) {
         if (mc.player == null) return WeStatus.noWorldEdit();
         if (!WorldEditAdapter.isLoaded()) return WeStatus.noWorldEdit();
@@ -104,12 +108,15 @@ public final class WorldEditBridge {
     }
 
     private static String versionOrEmpty() {
+        if (versionChecked) return cachedVersion;
         try {
-            return WorldEdit.getInstance().getPlatformManager()
+            cachedVersion = WorldEdit.getInstance().getPlatformManager()
                     .queryCapability(Capability.USER_COMMANDS).getPlatformVersion();
         } catch (Throwable e) {
-            return "";
+            cachedVersion = "";
         }
+        versionChecked = true;
+        return cachedVersion;
     }
 
     @Nullable

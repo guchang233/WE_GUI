@@ -39,16 +39,24 @@ public record WeStatus(
         if (template == null || template.isBlank()) {
             return defaultText();
         }
-        return template
-                .replace("{version}", version)
-                .replace("{regionType}", regionType)
-                .replace("{width}", String.valueOf(width))
-                .replace("{height}", String.valueOf(height))
-                .replace("{length}", String.valueOf(length))
-                .replace("{size}", width + "×" + height + "×" + length)
-                .replace("{count}", String.valueOf(blockCount))
-                .replace("{clipboard}", hasClipboard ? "{clipboard.yes}" : "{clipboard.no}")
-                .replace("{clipboardSize}", clipboardWidth + "×" + clipboardHeight + "×" + clipboardLength);
+        String result = template;
+        if (result.indexOf('{') >= 0) {
+            result = result
+                    .replace("{version}", version)
+                    .replace("{regionType}", regionType)
+                    .replace("{width}", String.valueOf(width))
+                    .replace("{height}", String.valueOf(height))
+                    .replace("{length}", String.valueOf(length));
+            if (result.contains("{size}")) {
+                result = result.replace("{size}", width + "×" + height + "×" + length);
+            }
+            result = result.replace("{count}", String.valueOf(blockCount))
+                    .replace("{clipboard}", hasClipboard ? "{clipboard.yes}" : "{clipboard.no}");
+            if (result.contains("{clipboardSize}")) {
+                result = result.replace("{clipboardSize}", clipboardWidth + "×" + clipboardHeight + "×" + clipboardLength);
+            }
+        }
+        return result;
     }
 
     private String defaultText() {

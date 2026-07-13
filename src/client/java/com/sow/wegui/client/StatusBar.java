@@ -23,6 +23,14 @@ public final class StatusBar {
     private static String cachedStatusNoSelection;
     private static String cachedPlaceholderLang;
 
+    // 渲染文本缓存：仅在 cached 快照或模板配置变化时重算，避免每帧重复字符串替换
+    private static WeStatus renderedSnapshot = null;
+    private static String renderedLine1Template = null;
+    private static String renderedLine2Template = null;
+    private static String renderedLang = null;
+    private static String cachedLine1 = "";
+    private static String cachedLine2 = "";
+
     private StatusBar() {}
 
     public static void register() {
@@ -50,8 +58,25 @@ public final class StatusBar {
         int offsetX = Configs.StatusBar.STATUS_BAR_OFFSET_X.getIntegerValue();
         int offsetY = Configs.StatusBar.STATUS_BAR_OFFSET_Y.getIntegerValue();
 
-        String line1 = translateStatusPlaceholders(cached.format(Configs.StatusBar.STATUS_BAR_LINE1.getStringValue()));
-        String line2 = translateStatusPlaceholders(cached.format(Configs.StatusBar.STATUS_BAR_LINE2.getStringValue()));
+        String line1Template = Configs.StatusBar.STATUS_BAR_LINE1.getStringValue();
+        String line2Template = Configs.StatusBar.STATUS_BAR_LINE2.getStringValue();
+        String lang = mc.options.languageCode;
+
+        // 仅在快照、模板或语言变化时重新格式化（每 10 tick 一次而非每帧）
+        if (renderedSnapshot != cached
+                || !java.util.Objects.equals(renderedLine1Template, line1Template)
+                || !java.util.Objects.equals(renderedLine2Template, line2Template)
+                || !java.util.Objects.equals(renderedLang, lang)) {
+            renderedSnapshot = cached;
+            renderedLine1Template = line1Template;
+            renderedLine2Template = line2Template;
+            renderedLang = lang;
+            cachedLine1 = translateStatusPlaceholders(cached.format(line1Template));
+            cachedLine2 = translateStatusPlaceholders(cached.format(line2Template));
+        }
+
+        String line1 = cachedLine1;
+        String line2 = cachedLine2;
 
         int w1 = mc.font.width(line1);
         int w2 = mc.font.width(line2);

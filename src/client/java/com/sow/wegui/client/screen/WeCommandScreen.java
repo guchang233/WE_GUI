@@ -211,19 +211,20 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
         entries.add(new FilterEntry(FilterMode.RECENT, null,
                 StringUtils.translate("wegui.command.recent"), CommandHistory.getRecent().size()));
 
+        // 单次遍历同时统计 ALL 与各 CATEGORY 的匹配数，避免 N + N 次匹配
         int allCount = 0;
+        java.util.Map<Category, int[]> categoryCounts = new java.util.EnumMap<>(Category.class);
         for (Command cmd : WeCommands.all()) {
-            if (CommandMatcher.matches(cmd, query)) allCount++;
+            if (CommandMatcher.matches(cmd, query)) {
+                allCount++;
+                categoryCounts.computeIfAbsent(cmd.category(), c -> new int[1])[0]++;
+            }
         }
         entries.add(new FilterEntry(FilterMode.ALL, null, StringUtils.translate("wegui.command.category.all"), allCount));
 
         for (Category category : Category.values()) {
-            List<Command> cmds = WeCommands.byCategory(category);
-            if (cmds.isEmpty()) continue;
-            int count = 0;
-            for (Command cmd : cmds) {
-                if (CommandMatcher.matches(cmd, query)) count++;
-            }
+            int count = categoryCounts.containsKey(category) ? categoryCounts.get(category)[0] : 0;
+            if (WeCommands.byCategory(category).isEmpty()) continue;
             entries.add(new FilterEntry(FilterMode.CATEGORY, category,
                     Component.translatable(category.getTranslationKey()).getString(), count));
         }
