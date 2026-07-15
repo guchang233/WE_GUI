@@ -164,18 +164,27 @@ public final class WorldEditBridge {
                         try {
                             BlockVector3 pos = BlockVector3.at(x, y, z);
                             BaseBlock base = clipboard.getFullBlock(pos);
-                            if (base.getBlockType().id().equals("minecraft:air")) continue;
-
-                            // 应用 //flip、//rotate 等变换到方块状态（朝向、半砖上下等）
-                            // 使用 WorldEdit 内部 paste 时相同的 BlockTransformExtent，确保与 //paste 结果一致
-                            BaseBlock transformedBase = BlockTransformExtent.transform(base, transform);
-                            BlockState state = convertToMcState(transformedBase.toImmutableState());
-                            if (state == null || state.isAir()) continue;
 
                             // 应用变换到位置（绕剪贴板 origin）
                             BlockVector3 local = pos.subtract(origin);
                             BlockVector3 transformed = transform.apply(local.toVector3()).toBlockPoint();
                             BlockPos target = new BlockPos(transformed.x(), transformed.y(), transformed.z());
+
+                            if (base.getBlockType().id().equals("minecraft:air")) {
+                                // 保留空气位置用于 EXTRA 检测（原理图空气 + 世界非空 = 多余方块）
+                                result.put(target, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                                continue;
+                            }
+
+                            // 应用 //flip、//rotate 等变换到方块状态（朝向、半砖上下等）
+                            // 使用 WorldEdit 内部 paste 时相同的 BlockTransformExtent，确保与 //paste 结果一致
+                            BaseBlock transformedBase = BlockTransformExtent.transform(base, transform);
+                            BlockState state = convertToMcState(transformedBase.toImmutableState());
+                            if (state == null || state.isAir()) {
+                                result.put(target, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                                continue;
+                            }
+
                             result.put(target, state);
                         } catch (Throwable e) {
                             WeGuiMod.LOGGER.debug("跳过无法转换的剪贴板方块: {}", e.toString());

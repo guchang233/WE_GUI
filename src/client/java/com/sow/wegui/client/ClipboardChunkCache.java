@@ -34,12 +34,22 @@ public final class ClipboardChunkCache {
     /**
      * 一个 16×16×16 chunk section 内方块的分组。
      * 同一 section 内的方块共享 frustum 剔除 AABB，减少逐方块 frustum 测试。
+     *
+     * <p>方块分为两类：
+     * <ul>
+     *   <li>非空气方块（{@link #relPositions} / {@link #states}）：用于 ghost block 纹理渲染和 mismatch 检测</li>
+     *   <li>空气位置（{@link #airPositions}）：原理图中为空气的坐标，用于 EXTRA 检测
+     *       （原理图空气 + 世界非空 = 多余方块）</li>
+     * </ul>
+     * </p>
      */
     public static final class ChunkGroup {
-        /** 相对 paste origin 的偏移坐标（与 origin 相加得到世界坐标） */
+        /** 相对 paste origin 的偏移坐标（与 origin 相加得到世界坐标）— 仅非空气方块 */
         public final List<BlockPos> relPositions = new ArrayList<>();
-        /** 该 section 内的方块状态（与 relPositions 同顺序、同长度） */
+        /** 该 section 内的方块状态（与 relPositions 同顺序、同长度）— 仅非空气方块 */
         public final List<BlockState> states = new ArrayList<>();
+        /** 该 section 内原理图为空气的相对坐标（用于 EXTRA 检测，不渲染 ghost block） */
+        public final List<BlockPos> airPositions = new ArrayList<>();
         /** 该 section 在世界坐标系下的 AABB（用于 frustum 剔除） */
         public final AABB worldAabb;
 
@@ -71,7 +81,7 @@ public final class ClipboardChunkCache {
         for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
             BlockPos rel = entry.getKey();
             BlockState state = entry.getValue();
-            if (state == null || state.isAir()) continue;
+            boolean isAir = (state == null || state.isAir());
 
             int sectionX = rel.getX() >> 4;
             int sectionY = rel.getY() >> 4;
@@ -79,17 +89,21 @@ public final class ClipboardChunkCache {
             long key = SectionPos.asLong(sectionX, sectionY, sectionZ);
 
             ChunkGroup group = groups.computeIfAbsent(key, k -> {
-                // section 在世界坐标系下的 AABB
                 int sx = origin.getX() + (sectionX << 4);
                 int sy = origin.getY() + (sectionY << 4);
                 int sz = origin.getZ() + (sectionZ << 4);
                 return new ChunkGroup(new AABB(sx, sy, sz, sx + 16, sy + 16, sz + 16));
             });
 
-            group.relPositions.add(rel);
-            group.states.add(state);
+            if (isAir) {
+                // 空气位置单独存储，用于 EXTRA 检测（不渲染 ghost block）
+                group.airPositions.add(rel);
+            } else {
+                group.relPositions.add(rel);
+                group.states.add(state);
+            }
 
-            // 计算整体 AABB
+            // 计算整体 AABB（包含空气位置，确保粘贴框覆盖整个剪贴板区域）
             BlockPos world = origin.offset(rel);
             minX = Math.min(minX, world.getX());
             minY = Math.min(minY, world.getY());

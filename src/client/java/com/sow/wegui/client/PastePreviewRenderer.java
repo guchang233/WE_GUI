@@ -126,10 +126,12 @@ public final class PastePreviewRenderer implements IRenderer {
     private static final float OUTLINE_EXPAND = 0.002f;
 
     // ---- 自定义 ghost block 渲染管线 ----
-    // 基于 RenderPipelines.TRANSLUCENT_MOVING_BLOCK，但禁用背面剔除（cull=false），
-    // 并使用 MAIN_TARGET 而非 ITEM_ENTITY_TARGET，确保半透明 ghost block 的所有面都被渲染。
-    // 原 translucentMovingBlock 的 cull=true 会导致半透明方块的背面被剔除，
-    // 透过半透明前面看到"空"的内部，视觉上表现为"部分顶点渲染不完整"。
+    // 基于 RenderPipelines.TRANSLUCENT_MOVING_BLOCK，但：
+    // 1. 禁用背面剔除（cull=false）：确保半透明 ghost block 的所有面都被渲染
+    // 2. 禁用深度写入（withDepthWrite=false）：关键！让 ghost block 不会被世界方块遮挡。
+    //    Litematica 原版用独立 schematic world 隔离深度，WeGui 无此架构，通过禁用深度写入
+    //    实现 ghost block 始终可见（不被同位置的世界方块剔除）。深度测试仍启用，ghost block
+    //    会被前方实心方块正确遮挡。
     private static final RenderPipeline.Snippet MATRICES_PROJECTION_SNIPPET =
             RenderPipeline.builder()
                     .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
@@ -145,6 +147,7 @@ public final class PastePreviewRenderer implements IRenderer {
             .withBlend(BlendFunction.TRANSLUCENT)
             .withVertexFormat(DefaultVertexFormat.BLOCK, VertexFormat.Mode.QUADS)
             .withCull(false)
+            .withDepthWrite(false)
             .build();
 
     private static final RenderType GHOST_BLOCK_TYPE = RenderTypeAccessor.wegui$create(
@@ -175,6 +178,8 @@ public final class PastePreviewRenderer implements IRenderer {
 
     // ---- 渲染风格预设 ----
     private RenderStylePreset lastPreset = RenderStylePreset.DEFAULT;
+    /** 标记预设是否已初始化应用过，确保启动时强制应用一次以覆盖配置文件中的旧值 */
+    private boolean presetInitialized = false;
 
     private PastePreviewRenderer() {}
 
@@ -276,13 +281,14 @@ public final class PastePreviewRenderer implements IRenderer {
 
     /**
      * 检测渲染风格预设变化，变化时批量应用对应的配色和参数。
-     * 在每帧渲染时调用。
+     * 在每帧渲染时调用。启动时强制应用一次，覆盖配置文件中的旧值。
      */
     private void checkPresetChange() {
         RenderStylePreset current = (RenderStylePreset) Configs.PastePreview.RENDER_STYLE_PRESET.getOptionListValue();
-        if (current != lastPreset) {
+        if (current != lastPreset || !presetInitialized) {
             applyPreset(current);
             lastPreset = current;
+            presetInitialized = true;
         }
     }
 
@@ -295,49 +301,59 @@ public final class PastePreviewRenderer implements IRenderer {
         WeGuiMod.LOGGER.info("[WE GUI] 应用渲染风格预设: {}", preset.getStringValue());
         switch (preset) {
             case LITEMATICA -> {
-                // Litematica 投影模组风格：实心 schematic blocks + per-block 染色 overlay + 无 paste box 面
+                // Litematica 投影模组风格：半透明 schematic blocks（不写深度，可见纹理）+ 半透明 overlay 填充面 + 实线边框
                 // 角点颜色对齐 Litematica colorPos1/colorPos2
                 Configs.RenderStyles.SELECTION_POS1_COLOR.setValueFromString("#FF1010FF");
                 Configs.RenderStyles.SELECTION_POS2_COLOR.setValueFromString("#1010FFFF");
                 // 粘贴外框对齐 Litematica colorArea（白色）
                 Configs.RenderStyles.PASTE_BOX_COLOR.setValueFromString("#FFFFFFFF");
-                // 非验证 overlay 颜色（青色，与 mismatch MISSING 区分）
-                Configs.RenderStyles.BLOCK_OVERLAY_COLOR.setValueFromString("#00FFFFFF");
-                // 仿 Litematica: RENDER_BLOCKS_AS_TRANSLUCENT=false（实心），GHOST_BLOCK_ALPHA 仅半透明模式生效
-                Configs.RenderStyles.RENDER_BLOCKS_AS_TRANSLUCENT.setBooleanValue(false);
-                Configs.RenderStyles.GHOST_BLOCK_ALPHA.setDoubleValue(0.5);
+                // 关键：RENDER_BLOCKS_AS_TRANSLUCENT=true，让 ghost block 通过 AlphaMultiBufferSource 渲染到
+                // GHOST_BLOCK_TYPE（基于 TRANSLUCENT_MOVING_BLOCK，不写深度），这样 ghost block 不会被世界
+                // 方块遮挡，纹理始终可见。GHOST_BLOCK_ALPHA=1.0 保持视觉上接近实心。
+                // Litematica 原版用独立 schematic world 隔离深度，WeGui 无此架构，用半透明不写深度等效复现。
+                Configs.RenderStyles.RENDER_BLOCKS_AS_TRANSLUCENT.setBooleanValue(true);
+                Configs.RenderStyles.GHOST_BLOCK_ALPHA.setDoubleValue(1.0);
                 // 仿 Litematica: RENDER_PASTE_BOX_SIDES=false（仅线框，无半透明面）
                 Configs.RenderStyles.RENDER_PASTE_BOX_SIDES.setBooleanValue(false);
                 Configs.RenderStyles.PASTE_BOX_SIDE_ALPHA.setDoubleValue(0.2);
                 Configs.Generic.BLOCK_OUTLINE_ENABLED.setBooleanValue(true);
-                // Litematica 方块验证配色（对齐 MismatchType 颜色常量，alpha=1.0 边框色）：
-                // MISSING=0x00FFFF（青）、WRONG_BLOCK=0xFF0000（红）、WRONG_STATE=0xFFAF00（橙）、EXTRA=0xFF00CF（品红）
-                Configs.RenderStyles.VERIFY_MISSING_COLOR.setValueFromString("#00FFFF");
-                Configs.RenderStyles.VERIFY_WRONG_BLOCK_COLOR.setValueFromString("#FF0000");
-                Configs.RenderStyles.VERIFY_WRONG_STATE_COLOR.setValueFromString("#FFAF00");
-                Configs.RenderStyles.VERIFY_EXTRA_COLOR.setValueFromString("#FF00CF");
+                // Litematica 方块验证配色（严格对齐 Configs.Colors.SCHEMATIC_OVERLAY_COLOR_*，#AARRGGBB）：
+                // MISSING=#2C33B3E6（青）、WRONG_BLOCK=#4CFF3333（红）、WRONG_STATE=#4CFF9010（橙）、EXTRA=#4CFF4CE6（品红）
+                Configs.RenderStyles.VERIFY_MISSING_COLOR.setValueFromString("#2C33B3E6");
+                Configs.RenderStyles.VERIFY_WRONG_BLOCK_COLOR.setValueFromString("#4CFF3333");
+                Configs.RenderStyles.VERIFY_WRONG_STATE_COLOR.setValueFromString("#4CFF9010");
+                Configs.RenderStyles.VERIFY_EXTRA_COLOR.setValueFromString("#4CFF4CE6");
                 Configs.Generic.BLOCK_VERIFICATION_ENABLED.setBooleanValue(true);
-                // 仿 Litematica: RENDER_ERROR_MARKER_SIDES=true（mismatch 填充面，始终穿墙）
-                Configs.RenderStyles.RENDER_ERROR_MARKER_SIDES.setBooleanValue(true);
+                // 禁用 mismatch 填充面，避免与 overlay 填充面叠加导致颜色变深遮挡纹理。
+                // mismatch 只保留边框线（始终穿墙 + 注视方块加粗），overlay 负责半透明填充面。
+                Configs.RenderStyles.RENDER_ERROR_MARKER_SIDES.setBooleanValue(false);
                 Configs.RenderStyles.VERIFY_HILIGHT_ALPHA.setDoubleValue(0.2);
-                // 仿 Litematica: OVERLAY_ENABLE_SIDES=true（带深度染色面，落地感）
+                // 关键：OVERLAY_ENABLE_SIDES=true，渲染半透明填充面（alpha 来自 Litematica 颜色 #AARRGGBB），
+                // 透过半透明填充面可以看到 ghost block 纹理，完全复现 Litematica 的视觉效果
                 Configs.RenderStyles.OVERLAY_ENABLE_SIDES.setBooleanValue(true);
             }
             case DEFAULT -> {
-                // WeGui 原始风格：黄色粘贴外框、绿色半透明面、每方块边框关闭
+                // WeGui 默认风格：黄色粘贴外框 + Litematica 渲染机制
+                // 保留 WeGui 特色的黄色外框和角点颜色，但渲染机制完全对齐 Litematica
                 Configs.RenderStyles.SELECTION_POS1_COLOR.setValueFromString("#FF0F0FFF");
                 Configs.RenderStyles.SELECTION_POS2_COLOR.setValueFromString("#0F0FFFFF");
                 Configs.RenderStyles.PASTE_BOX_COLOR.setValueFromString("#FFD100FF");
-                Configs.RenderStyles.BLOCK_OVERLAY_COLOR.setValueFromString("#00FF80FF");
+                // 渲染机制对齐 Litematica（与 LITEMATICA 预设一致）：
+                // 半透明 ghost block（不写深度，纹理可见）+ 验证状态着色 + 半透明 overlay 填充面
                 Configs.RenderStyles.RENDER_BLOCKS_AS_TRANSLUCENT.setBooleanValue(true);
-                Configs.RenderStyles.GHOST_BLOCK_ALPHA.setDoubleValue(0.5);
-                Configs.RenderStyles.RENDER_PASTE_BOX_SIDES.setBooleanValue(true);
+                Configs.RenderStyles.GHOST_BLOCK_ALPHA.setDoubleValue(1.0);
+                Configs.RenderStyles.RENDER_PASTE_BOX_SIDES.setBooleanValue(false);
                 Configs.RenderStyles.PASTE_BOX_SIDE_ALPHA.setDoubleValue(0.2);
-                Configs.Generic.BLOCK_OUTLINE_ENABLED.setBooleanValue(false);
-                Configs.Generic.BLOCK_VERIFICATION_ENABLED.setBooleanValue(false);
-                Configs.RenderStyles.RENDER_ERROR_MARKER_SIDES.setBooleanValue(true);
+                Configs.Generic.BLOCK_OUTLINE_ENABLED.setBooleanValue(true);
+                // Litematica 方块验证配色（#AARRGGBB）
+                Configs.RenderStyles.VERIFY_MISSING_COLOR.setValueFromString("#2C33B3E6");
+                Configs.RenderStyles.VERIFY_WRONG_BLOCK_COLOR.setValueFromString("#4CFF3333");
+                Configs.RenderStyles.VERIFY_WRONG_STATE_COLOR.setValueFromString("#4CFF9010");
+                Configs.RenderStyles.VERIFY_EXTRA_COLOR.setValueFromString("#4CFF4CE6");
+                Configs.Generic.BLOCK_VERIFICATION_ENABLED.setBooleanValue(true);
+                Configs.RenderStyles.RENDER_ERROR_MARKER_SIDES.setBooleanValue(false);
                 Configs.RenderStyles.VERIFY_HILIGHT_ALPHA.setDoubleValue(0.2);
-                Configs.RenderStyles.OVERLAY_ENABLE_SIDES.setBooleanValue(false);
+                Configs.RenderStyles.OVERLAY_ENABLE_SIDES.setBooleanValue(true);
             }
         }
     }
@@ -378,9 +394,11 @@ public final class PastePreviewRenderer implements IRenderer {
         // 确保 chunk 缓存有效
         ensureChunkCache(blocks, origin);
 
-        // 实心模式（仿 Litematica RENDER_BLOCKS_AS_TRANSLUCENT=false）：使用原生 RenderType，
-        // 方块以完整不透明度渲染（SOLID/CUTOUT/CUTOUT_MIPPED/TRANSLUCENT 各自正确）。
-        // 半透明模式：使用 AlphaMultiBufferSource 统一施加 alpha 倍率。
+        // LITEMATICA 预设使用半透明模式（RENDER_BLOCKS_AS_TRANSLUCENT=true）：
+        // - 通过 AlphaMultiBufferSource 路由到 GHOST_BLOCK_TYPE（禁用深度写入）
+        // - ghost block 不会被世界方块遮挡，纹理始终可见
+        // - GHOST_BLOCK_ALPHA=1.0 时视觉上接近实心，但保持半透明混合
+        // 实心模式（RENDER_BLOCKS_AS_TRANSLUCENT=false）：使用原生 RenderType，方块以完整不透明度渲染。
         boolean solid = !Configs.RenderStyles.RENDER_BLOCKS_AS_TRANSLUCENT.getBooleanValue();
         float alpha = solid ? 1.0f : (float) Configs.RenderStyles.GHOST_BLOCK_ALPHA.getDoubleValue();
         if (alpha <= 0.0f) return;
@@ -741,6 +759,22 @@ public final class PastePreviewRenderer implements IRenderer {
                     lookedColor = color;
                 }
             }
+
+            // EXTRA 检测：原理图空气位置 + 世界非空 = 多余方块
+            for (BlockPos rel : group.airPositions) {
+                BlockPos target = origin.offset(rel);
+                BlockState found = level.getBlockState(target);
+                if (found.isAir()) continue;
+                if (!shouldRenderMismatchType(BlockMatchStatus.EXTRA)) continue;
+                Color4f color = getVerifyColor(BlockMatchStatus.EXTRA);
+                if (color == null) continue;
+                mismatchPositions.add(target);
+                mismatchColors.add(color);
+                if (lookPos != null && lookPos.equals(target)) {
+                    lookedTarget = target;
+                    lookedColor = color;
+                }
+            }
         }
 
         // 位置限制（按距离截断，对齐 Litematica VERIFIER_ERROR_HILIGHT_MAX_POSITIONS）
@@ -794,14 +828,17 @@ public final class PastePreviewRenderer implements IRenderer {
                 BlockPos prevPos = null;
                 for (int i = 0; i < mismatchPositions.size(); i++) {
                     BlockPos target = mismatchPositions.get(i);
-                    Color4f color = mismatchColors.get(i);
+                    Color4f c = mismatchColors.get(i);
                     if (target.equals(lookedTarget)) {
                         prevPos = target;
                         continue;
                     }
-                    RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(target, color, OUTLINE_EXPAND, LINE_WIDTH_MISMATCH, buffer);
+                    // 边框线强制 alpha=1.0（对齐 Litematica OverlayRenderer.renderSchematicMismatches:390，
+                    // MismatchType.getColor() 返回纯色 alpha=1.0）
+                    Color4f lineColor = new Color4f(c.r, c.g, c.b, 1.0f);
+                    RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(target, lineColor, OUTLINE_EXPAND, LINE_WIDTH_MISMATCH, buffer);
                     if (renderConnections && prevPos != null && !prevPos.equals(target)) {
-                        RenderUtils.drawConnectingLineBatchedLines(prevPos, target, false, color, LINE_WIDTH_MISMATCH, buffer);
+                        RenderUtils.drawConnectingLineBatchedLines(prevPos, target, false, lineColor, LINE_WIDTH_MISMATCH, buffer);
                     }
                     prevPos = target;
                 }
@@ -821,7 +858,9 @@ public final class PastePreviewRenderer implements IRenderer {
                     BufferBuilder boldBuffer = ctx.start(
                             () -> "wegui:mismatch/outlines",
                             linePipeline);
-                    RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(lookedTarget, lookedColor, OUTLINE_EXPAND, LINE_WIDTH_MISMATCH_LOOKED, boldBuffer);
+                    // 注视方块边框也强制 alpha=1.0
+                    Color4f lookedBold = new Color4f(lookedColor.r, lookedColor.g, lookedColor.b, 1.0f);
+                    RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(lookedTarget, lookedBold, OUTLINE_EXPAND, LINE_WIDTH_MISMATCH_LOOKED, boldBuffer);
                     try {
                         MeshData meshData = boldBuffer.build();
                         if (meshData != null) {
@@ -867,19 +906,19 @@ public final class PastePreviewRenderer implements IRenderer {
      * <p>严格复刻 Litematica {@code ChunkRendererSchematicVbo.getOverlayType} + {@code getOverlayColor}：
      * 始终按方块验证状态着色，CORRECT 不渲染（仅 ghost block 显示原纹理）。</p>
      *
-     * <p>着色规则（与 Litematica 完全一致）：
+     * <p>着色规则（与 Litematica SCHEMATIC_OVERLAY_COLOR_* 完全一致）：
      * <ul>
      *   <li>CORRECT（方块+状态相同）→ 不渲染 overlay</li>
-     *   <li>WRONG_BLOCK（方块类型不同）→ 红色 #FF0000</li>
-     *   <li>WRONG_STATE（方块相同，状态不同）→ 橙色 #FFAF00</li>
-     *   <li>MISSING（期望非空，实际空气）→ 青色 #00FFFF</li>
-     *   <li>EXTRA（期望空气，实际非空）→ 品红 #FF00CF</li>
+     *   <li>WRONG_BLOCK（方块类型不同）→ #4CFF3333（红色半透明）</li>
+     *   <li>WRONG_STATE（方块相同，状态不同）→ #4CFF9010（橙色半透明）</li>
+     *   <li>MISSING（期望非空，实际空气）→ #2C33B3E6（青色半透明）</li>
+     *   <li>EXTRA（期望空气，实际非空）→ #4CFF4CE6（品红半透明）</li>
      * </ul></p>
      *
      * <p>可配置穿墙（OVERLAY_RENDER_THROUGH），正常模式使用 OFFSET_2 管线防 z-fighting。</p>
      *
-     * <p>层1: 边框线 (batched_lines) — OVERLAY_OUTLINE_WIDTH / OVERLAY_OUTLINE_WIDTH_THROUGH<br>
-     * 层2: 填充面 (side_quads) — DEFAULT_SIDE_ALPHA，受 OVERLAY_ENABLE_SIDES 控制</p>
+     * <p>层1: 边框线 (batched_lines) — 强制 alpha=1.0，OVERLAY_OUTLINE_WIDTH / OVERLAY_OUTLINE_WIDTH_THROUGH<br>
+     * 层2: 填充面 (side_quads) — 使用颜色自带 alpha，受 OVERLAY_ENABLE_SIDES 控制</p>
      */
     private void renderSchematicOverlay(Frustum frustum, Camera camera, BlockPos origin, Level level) {
         if (chunkCache.isEmpty()) return;
@@ -906,7 +945,6 @@ public final class PastePreviewRenderer implements IRenderer {
         boolean reducedInnerSides = Configs.RenderStyles.OVERLAY_REDUCED_INNER_SIDES.getBooleanValue();
         boolean enableOutlines = Configs.RenderStyles.OVERLAY_ENABLE_OUTLINES.getBooleanValue();
         boolean enableSides = Configs.RenderStyles.OVERLAY_ENABLE_SIDES.getBooleanValue();
-        float sideAlpha = DEFAULT_SIDE_ALPHA;
 
         // 严格复刻 Litematica ChunkRendererSchematicVbo.getOverlayType + getOverlayColor：
         // overlay 始终按方块验证状态着色，CORRECT 不渲染（仅 ghost block 显示原纹理），
@@ -942,9 +980,23 @@ public final class PastePreviewRenderer implements IRenderer {
                 overlayPositions.add(target);
                 overlayColors.add(color);
             }
+
+            // EXTRA 检测：原理图空气位置 + 世界非空 = 多余方块（品红色标记）
+            for (BlockPos rel : group.airPositions) {
+                BlockPos target = origin.offset(rel);
+                BlockState found = level.getBlockState(target);
+                if (found.isAir()) continue; // 两者皆空 = CORRECT
+                // 原理图空气 + 世界非空 = EXTRA
+                if (!shouldRenderMismatchType(BlockMatchStatus.EXTRA)) continue;
+                Color4f color = getVerifyColor(BlockMatchStatus.EXTRA);
+                if (color == null) continue;
+                overlayPositions.add(target);
+                overlayColors.add(color);
+            }
         }
 
         // ========== 层1: 边框线 ==========
+        // Litematica ChunkRendererSchematicVbo.renderOverlay: 边框线强制 alpha=1.0
         if (enableOutlines && !overlayPositions.isEmpty()) {
             try (RenderContext ctx = new RenderContext(
                     () -> "wegui:overlay/batched_lines",
@@ -955,8 +1007,10 @@ public final class PastePreviewRenderer implements IRenderer {
 
                 for (int i = 0; i < overlayPositions.size(); i++) {
                     BlockPos target = overlayPositions.get(i);
-                    Color4f color = overlayColors.get(i);
-                    RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(target, color, OUTLINE_EXPAND, lineWidth, buffer);
+                    Color4f c = overlayColors.get(i);
+                    // 边框线强制 alpha=1.0（对齐 Litematica ChunkRendererSchematicVbo:813）
+                    Color4f lineColor = new Color4f(c.r, c.g, c.b, 1.0f);
+                    RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(target, lineColor, OUTLINE_EXPAND, lineWidth, buffer);
                 }
 
                 try {
@@ -973,6 +1027,7 @@ public final class PastePreviewRenderer implements IRenderer {
         }
 
         // ========== 层2: 填充面 ==========
+        // Litematica ChunkRendererSchematicVbo.renderOverlay: 填充面使用颜色自带的 alpha
         if (enableSides && !overlayPositions.isEmpty()) {
             try (RenderContext sideCtx = new RenderContext(
                     () -> "wegui:overlay/side_quads",
@@ -984,8 +1039,8 @@ public final class PastePreviewRenderer implements IRenderer {
                     BlockPos pos = overlayPositions.get(i);
                     if (reducedInnerSides && !isBlockExposed(pos, level)) continue;
                     Color4f c = overlayColors.get(i);
-                    Color4f sideColor = new Color4f(c.r, c.g, c.b, sideAlpha);
-                    RenderUtils.renderAreaSidesBatched(pos, pos, sideColor, OUTLINE_EXPAND, sideBuffer);
+                    // 填充面使用颜色自带的 alpha（对齐 Litematica，SCHEMATIC_OVERLAY_COLOR_* 已含 alpha）
+                    RenderUtils.renderAreaSidesBatched(pos, pos, c, OUTLINE_EXPAND, sideBuffer);
                 }
                 MeshData sideMesh = sideBuffer.build();
                 if (sideMesh != null) {

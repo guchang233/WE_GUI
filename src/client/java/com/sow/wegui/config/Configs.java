@@ -57,7 +57,7 @@ public class Configs implements IConfigHandler {
         public static final ConfigBooleanHotkeyed SELECTION_BOUNDS_ENABLED = new ConfigBooleanHotkeyed("selectionBoundsEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed SELECTION_MESSAGE_ENABLED = new ConfigBooleanHotkeyed("selectionMessageEnabled", false, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed BLOCK_OUTLINE_ENABLED = new ConfigBooleanHotkeyed("blockOutlineEnabled", false, "").apply(GENERIC_KEY);
-        public static final ConfigBooleanHotkeyed BLOCK_VERIFICATION_ENABLED = new ConfigBooleanHotkeyed("blockVerificationEnabled", false, "").apply(GENERIC_KEY);
+        public static final ConfigBooleanHotkeyed BLOCK_VERIFICATION_ENABLED = new ConfigBooleanHotkeyed("blockVerificationEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigString WAND_ITEM = new ConfigString("wandItem", "minecraft:wooden_axe").apply(GENERIC_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
@@ -158,8 +158,8 @@ public class Configs implements IConfigHandler {
         public static final ConfigColor SELECTION_POS2_COLOR = new ConfigColor("selectionPos2Color", new Color4f(0.0625f, 0.0625f, 1.0f, 1.0f)).apply(RENDER_STYLES_KEY);
 
         // ---- Ghost block 渲染风格 ----
-        /** 半透明方块（Litematica Visuals.RENDER_BLOCKS_AS_TRANSLUCENT=false，默认实心） */
-        public static final ConfigBooleanHotkeyed RENDER_BLOCKS_AS_TRANSLUCENT = new ConfigBooleanHotkeyed("renderBlocksAsTranslucent", false, "").apply(RENDER_STYLES_KEY);
+        /** 半透明方块（Litematica Visuals.RENDER_BLOCKS_AS_TRANSLUCENT，WeGui 默认 true 以避免深度遮挡） */
+        public static final ConfigBooleanHotkeyed RENDER_BLOCKS_AS_TRANSLUCENT = new ConfigBooleanHotkeyed("renderBlocksAsTranslucent", true, "").apply(RENDER_STYLES_KEY);
         /** 假光照（Litematica Visuals.ENABLE_FAKE_LIGHTING） */
         public static final ConfigBooleanHotkeyed ENABLE_FAKE_LIGHTING = new ConfigBooleanHotkeyed("enableFakeLighting", false, "").apply(RENDER_STYLES_KEY);
         /** 幽灵方块透明度（Litematica Visuals.GHOST_BLOCK_ALPHA=0.5） */
@@ -204,15 +204,15 @@ public class Configs implements IConfigHandler {
         /** 验证最大位置数（Litematica InfoOverlays.VERIFIER_ERROR_HILIGHT_MAX_POSITIONS=1000） */
         public static final ConfigInteger VERIFIER_ERROR_HILIGHT_MAX_POSITIONS = new ConfigInteger("verifierErrorHilightMaxPositions", 1000, 1, 1000000).apply(RENDER_STYLES_KEY);
 
-        // ---- 验证颜色（对齐 Litematica MismatchType 颜色常量） ----
-        /** 缺失颜色（Litematica MismatchType.MISSING=0x00FFFF，青色） */
-        public static final ConfigColor VERIFY_MISSING_COLOR = new ConfigColor("verifyMissingColor", "#00FFFF").apply(RENDER_STYLES_KEY);
-        /** 错方块颜色（Litematica MismatchType.WRONG_BLOCK=0xFF0000，红色） */
-        public static final ConfigColor VERIFY_WRONG_BLOCK_COLOR = new ConfigColor("verifyWrongBlockColor", "#FF0000").apply(RENDER_STYLES_KEY);
-        /** 错状态颜色（Litematica MismatchType.WRONG_STATE=0xFFAF00，橙色） */
-        public static final ConfigColor VERIFY_WRONG_STATE_COLOR = new ConfigColor("verifyWrongStateColor", "#FFAF00").apply(RENDER_STYLES_KEY);
-        /** 多余颜色（Litematica MismatchType.EXTRA=0xFF00CF，品红） */
-        public static final ConfigColor VERIFY_EXTRA_COLOR = new ConfigColor("verifyExtraColor", "#FF00CF").apply(RENDER_STYLES_KEY);
+        // ---- 验证颜色（严格对齐 Litematica Configs.Colors.SCHEMATIC_OVERLAY_COLOR_*，#AARRGGBB 格式） ----
+        /** 缺失颜色（Litematica SCHEMATIC_OVERLAY_COLOR_MISSING=#2C33B3E6，青色半透明） */
+        public static final ConfigColor VERIFY_MISSING_COLOR = new ConfigColor("verifyMissingColor", "#2C33B3E6").apply(RENDER_STYLES_KEY);
+        /** 错方块颜色（Litematica SCHEMATIC_OVERLAY_COLOR_WRONG_BLOCK=#4CFF3333，红色半透明） */
+        public static final ConfigColor VERIFY_WRONG_BLOCK_COLOR = new ConfigColor("verifyWrongBlockColor", "#4CFF3333").apply(RENDER_STYLES_KEY);
+        /** 错状态颜色（Litematica SCHEMATIC_OVERLAY_COLOR_WRONG_STATE=#4CFF9010，橙色半透明） */
+        public static final ConfigColor VERIFY_WRONG_STATE_COLOR = new ConfigColor("verifyWrongStateColor", "#4CFF9010").apply(RENDER_STYLES_KEY);
+        /** 多余颜色（Litematica SCHEMATIC_OVERLAY_COLOR_EXTRA=#4CFF4CE6，品红半透明） */
+        public static final ConfigColor VERIFY_EXTRA_COLOR = new ConfigColor("verifyExtraColor", "#4CFF4CE6").apply(RENDER_STYLES_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 // 总开关
