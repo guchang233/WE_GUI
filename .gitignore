@@ -47,3 +47,15 @@ assets/indexes/
 
 # Decompiled / external source cache
 .we-src/
+
+# Reference sources (Litematica / WorldEdit 等，仅供开发参考，不参与编译)
+decompile_out/
+litematica-26.2/
+litematica-src/
+litematica-src-extracted/
+litematica-*-src.zip
+temp_we_core_src/
+temp_we_i18n/
+temp_we_src/
+tmp_*.txt
+build_stdout.txt
