@@ -55,6 +55,8 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
             configs = Configs.CommandPanel.OPTIONS;
         } else if (tab == ConfigGuiTab.HOTKEYS) {
             configs = Configs.Hotkeys.OPTIONS;
+        } else if (tab == ConfigGuiTab.RENDER_STYLES) {
+            configs = Configs.RenderStyles.OPTIONS;
         } else {
             configs = ImmutableList.of();
         }
@@ -76,6 +78,7 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         configs.addAll(ConfigOptionWrapper.createFor(Configs.ModeIndicator.OPTIONS));
         configs.addAll(ConfigOptionWrapper.createFor(Configs.CommandPanel.OPTIONS));
         configs.addAll(ConfigOptionWrapper.createFor(Configs.Hotkeys.OPTIONS));
+        configs.addAll(ConfigOptionWrapper.createFor(Configs.RenderStyles.OPTIONS));
         return configs;
     }
 
@@ -84,6 +87,8 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         ConfigGuiTab tab = getActiveTab();
         if (tab == ConfigGuiTab.STATUS_BAR || tab == ConfigGuiTab.PASTE_PREVIEW) {
             return 140;
+        } else if (tab == ConfigGuiTab.RENDER_STYLES) {
+            return 200;
         }
         return super.getConfigWidth();
     }
@@ -133,7 +138,8 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         PASTE_PREVIEW("wegui.config.tab.paste_preview"),
         MODE_INDICATOR("wegui.config.tab.mode_indicator"),
         COMMAND_PANEL("wegui.config.tab.command_panel"),
-        HOTKEYS("wegui.config.tab.hotkeys");
+        HOTKEYS("wegui.config.tab.hotkeys"),
+        RENDER_STYLES("wegui.config.tab.render_styles");
 
         private final String translationKey;
 

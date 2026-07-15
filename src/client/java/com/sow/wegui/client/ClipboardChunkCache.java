@@ -8,22 +8,40 @@ import net.minecraft.world.phys.AABB;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
- * 把 clipboard 方块按 16×16×16 chunk section 分组缓存。
- * clipboard 内容变化时调 rebuild 重新分组；每帧渲染时遍历 groups 做 frustum 剔除。
+ * 剪贴板方块按 16×16×16 chunk section 分组的缓存。
+ *
+ * <p>对齐 Litematica 的 {@code ChunkCacheSchematic} 思路：把零散的方块按 chunk section
+ * 分组，每个 section 内的方块共享一个 {@link AABB} 用于 frustum 剔除。这样在渲染时
+ * 只需要遍历少量 group，而不是数千个独立方块位置。</p>
+ *
+ * <p>数据结构对齐 Litematica：
+ * <ul>
+ *   <li>{@link ChunkGroup#relPositions}：相对 paste origin 的偏移坐标，对应 Litematica 的 section-relative pos</li>
+ *   <li>{@link ChunkGroup#states}：方块状态列表，与 relPositions 一一对应</li>
+ *   <li>{@link ChunkGroup#worldAabb}：section 在世界坐标系下的 AABB，用于 frustum 剔除</li>
+ * </ul>
+ * </p>
+ *
+ * <p>与 Litematica 的差异：Litematica 缓存了完整的 BlockState palette 和 chunk section 数据，
+ * 此处简化为只缓存方块位置和状态（WE clipboard 是只读快照，无需 palette 压缩）。</p>
  */
 public final class ClipboardChunkCache {
 
-    /** 一个 chunk section 内方块的分组 */
+    /**
+     * 一个 16×16×16 chunk section 内方块的分组。
+     * 同一 section 内的方块共享 frustum 剔除 AABB，减少逐方块 frustum 测试。
+     */
     public static final class ChunkGroup {
-        /** 相对 paste origin 的偏移坐标 */
-        public final java.util.List<BlockPos> relPositions = new ArrayList<>();
+        /** 相对 paste origin 的偏移坐标（与 origin 相加得到世界坐标） */
+        public final List<BlockPos> relPositions = new ArrayList<>();
+        /** 该 section 内的方块状态（与 relPositions 同顺序、同长度） */
+        public final List<BlockState> states = new ArrayList<>();
         /** 该 section 在世界坐标系下的 AABB（用于 frustum 剔除） */
         public final AABB worldAabb;
-        /** 该 section 内的方块状态（与 relPositions 同顺序） */
-        public final java.util.List<BlockState> states = new ArrayList<>();
 
         ChunkGroup(AABB worldAabb) {
             this.worldAabb = worldAabb;
@@ -86,22 +104,27 @@ public final class ClipboardChunkCache {
         }
     }
 
+    /** 获取所有 chunk section 分组（用于遍历渲染） */
     public Collection<ChunkGroup> getGroups() {
         return groups.values();
     }
 
+    /** 获取所有方块的整体 AABB（用于整体 frustum 剔除） */
     public AABB getTotalBox() {
         return totalBox;
     }
 
+    /** 获取 paste origin（世界坐标） */
     public BlockPos getOrigin() {
         return origin;
     }
 
+    /** 是否为空（无方块） */
     public boolean isEmpty() {
         return groups.isEmpty();
     }
 
+    /** 清空缓存 */
     public void clear() {
         groups = new HashMap<>();
         totalBox = null;

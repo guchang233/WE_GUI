@@ -394,6 +394,7 @@ public final class WorldEditBridge {
             final int tx = target.getX(), ty = target.getY(), tz = target.getZ();
 
             WeGuiMod.LOGGER.info("[WE GUI] pasteClipboardAt: 调度到服务端线程, target=({}, {}, {})", tx, ty, tz);
+            final ServerLevel finalLevel = level;
             server.execute(() -> {
                 try (EditSession editSession = WorldEdit.getInstance().getEditSessionFactory().getEditSession(finalWeWorld, -1)) {
                     Operation operation = finalHolder.createPaste(editSession)
@@ -403,6 +404,38 @@ public final class WorldEditBridge {
                     Operations.complete(operation);
                     finalSession.remember(editSession);
                     WeGuiMod.LOGGER.info("[WE GUI] pasteClipboardAt: 粘贴成功 at ({}, {}, {})", tx, ty, tz);
+
+                    // 主动通知客户端方块更新：WorldEdit 的 paste 可能绕过正常的方块更新流程，
+                    // 导致客户端 level.getBlockState(target) 仍返回旧状态（空气），
+                    // 从而 mismatch overlay 仍显示"方块缺失"颜色。
+                    // 遍历剪贴板方块位置，调用 sendBlockUpdated 强制通知客户端刷新。
+                    try {
+                        com.sk89q.worldedit.extent.clipboard.Clipboard clipboard = finalHolder.getClipboard();
+                        BlockVector3 cbMin = clipboard.getMinimumPoint();
+                        BlockVector3 cbMax = clipboard.getMaximumPoint();
+                        BlockVector3 cbOrigin = clipboard.getOrigin();
+                        Transform transform = finalHolder.getTransform();
+                        for (int x = cbMin.x(); x <= cbMax.x(); x++) {
+                            for (int y = cbMin.y(); y <= cbMax.y(); y++) {
+                                for (int z = cbMin.z(); z <= cbMax.z(); z++) {
+                                    BlockVector3 pos = BlockVector3.at(x, y, z);
+                                    BaseBlock base = clipboard.getFullBlock(pos);
+                                    if (base.getBlockType().id().equals("minecraft:air")) continue;
+                                    BlockVector3 local = pos.subtract(cbOrigin);
+                                    BlockVector3 transformed = transform.apply(local.toVector3()).toBlockPoint();
+                                    BlockPos notifyPos = new BlockPos(
+                                            tx + transformed.x(),
+                                            ty + transformed.y(),
+                                            tz + transformed.z());
+                                    // 主动通知客户端方块更新（flags=3 = NOTIFY_ALL）
+                                    var state = finalLevel.getBlockState(notifyPos);
+                                    finalLevel.sendBlockUpdated(notifyPos, state, state, 3);
+                                }
+                            }
+                        }
+                    } catch (Throwable ex) {
+                        WeGuiMod.LOGGER.debug("[WE GUI] 主动通知客户端方块更新失败: {}", ex.toString());
+                    }
                 } catch (Throwable e) {
                     WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: 服务端线程粘贴异常 at ({}, {}, {}): {}", tx, ty, tz, e);
                 }

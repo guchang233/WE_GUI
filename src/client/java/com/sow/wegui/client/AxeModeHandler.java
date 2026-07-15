@@ -359,6 +359,8 @@ public final class AxeModeHandler {
             WeGuiMod.LOGGER.info("[WE GUI] 固定模式 paste 到 {}", fixedOrigin);
             boolean success = WorldEditBridge.pasteClipboardAt(player, fixedOrigin);
             if (success) {
+                // 失效缓存，确保下一帧重新读取世界方块进行 mismatch 计算
+                PastePreviewRenderer.invalidateCache();
                 player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(fixedOrigin)).withStyle(ChatFormatting.GREEN), true);
             } else {
                 player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
@@ -386,6 +388,8 @@ public final class AxeModeHandler {
         WeGuiMod.LOGGER.info("[WE GUI] 调用 API 粘贴到 {}", origin);
         boolean success = WorldEditBridge.pasteClipboardAt(player, origin);
         if (success) {
+            // 失效缓存，确保下一帧重新读取世界方块进行 mismatch 计算
+            PastePreviewRenderer.invalidateCache();
             player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(origin)).withStyle(ChatFormatting.GREEN), true);
         } else {
             player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
