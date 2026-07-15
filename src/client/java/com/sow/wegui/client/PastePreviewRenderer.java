@@ -530,7 +530,11 @@ public final class PastePreviewRenderer implements IRenderer {
                 BlockPos pos1 = new BlockPos(sel.minX(), sel.minY(), sel.minZ());
                 BlockPos pos2 = new BlockPos(sel.minX() + sel.w() - 1, sel.minY() + sel.h() - 1, sel.minZ() + sel.l() - 1);
                 // 选区大框使用 RGB 轴色（Litematica AREA_SELECTED 类型）
-                RenderUtils.renderAreaOutlineNoCorners(pos1, pos2, LINE_WIDTH_AREA, COLOR_X, COLOR_Y, COLOR_Z);
+                // 使用 renderAreaOutline（不跳过角点），确保 8 个角点处三条线都交汇。
+                // 不用 renderAreaOutlineNoCorners，因为它跳过 min/max 对角点的线段，
+                // 而角点框只在 WorldEdit pos1/pos2 位置渲染，若 pos1/pos2 不是 min/max 角
+                // 会导致跳过的角点无框填补，出现"三条线不交汇"的缺口。
+                RenderUtils.renderAreaOutline(pos1, pos2, LINE_WIDTH_AREA, COLOR_X, COLOR_Y, COLOR_Z);
                 // 可选半透明面：RENDER_AREA_SELECTION_BOX_SIDES 开关 + AREA_SELECTION_BOX_SIDE_COLOR
                 if (Configs.RenderStyles.RENDER_AREA_SELECTION_BOX_SIDES.getBooleanValue()) {
                     var sideC = Configs.RenderStyles.AREA_SELECTION_BOX_SIDE_COLOR.getColor();
