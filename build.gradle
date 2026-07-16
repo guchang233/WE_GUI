@@ -23,6 +23,15 @@ loom {
             sourceSet sourceSets.client
         }
     }
+
+    runs {
+        client {
+            // 启用 DevAuth Neo，在开发环境下使用正版 Microsoft 账号登录
+            vmArg "-Ddevauth.enabled=1"
+        }
+        server {
+        }
+    }
 }
 
 dependencies {
@@ -37,6 +46,11 @@ dependencies {
 
     // MaLiLib：提供 masa 风格的配置界面与配置系统
     modImplementation "maven.modrinth:GcWjdA9I:5Ywu5uMw"
+
+    // DevAuth Neo：开发环境下使用正版 Microsoft 账号登录（仅本地运行，不会打包进 jar）
+    // 暂时禁用：Fabric Loader 0.18.4 的 classTweaker 命名空间检查与 DevAuth Neo 不兼容
+    // （intermediary vs named），等待 DevAuth Neo 更新适配
+    // localRuntime "maven.modrinth:AHiIR2bn:yUXOoNHR"
 }
 
 processResources {

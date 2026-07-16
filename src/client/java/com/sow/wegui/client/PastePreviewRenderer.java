@@ -68,8 +68,8 @@ import java.util.Map;
  *     单色外框 + PLACEMENT_BOX_SIDE_ALPHA 半透明面</li>
  *   <li>层③ ghost blocks 真实材质 — 对齐 {@code WorldRendererSchematic.renderBlockLayer}：
  *     BlockRenderDispatcher.renderSingleBlock + chunk section 分组距离剔除</li>
- *   <li>层④ Mismatch 渲染（验证模式，始终穿墙）— 对齐 {@code OverlayRenderer.renderSchematicMismatches}：
- *     DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL 管线，lineWidth=2.0f，注视方块加粗 lineWidth=6.0f</li>
+ *   <li>层④ Mismatch 渲染（验证模式，边框线有遮挡）— 对齐 {@code OverlayRenderer.renderSchematicMismatches}：
+ *     DEBUG_LINES_MASA_SIMPLE_OFFSET_2 管线（有深度测试），lineWidth=2.0f，注视方块加粗 lineWidth=6.0f</li>
  *   <li>层⑤ Schematic Overlay（可配置穿墙）— 对齐 {@code WorldRendererSchematic.renderBlockOverlays}：
  *     正常模式 OFFSET_2 防 z-fighting，透墙模式 NO_DEPTH_NO_CULL</li>
  * </ul>
@@ -126,12 +126,15 @@ public final class PastePreviewRenderer implements IRenderer {
     private static final float OUTLINE_EXPAND = 0.002f;
 
     // ---- 自定义 ghost block 渲染管线 ----
-    // 基于 RenderPipelines.TRANSLUCENT_MOVING_BLOCK，但：
+    // 基于 RenderPipelines.TRANSLUCENT_MOVING_BLOCK，关键调整：
     // 1. 禁用背面剔除（cull=false）：确保半透明 ghost block 的所有面都被渲染
-    // 2. 禁用深度写入（withDepthWrite=false）：关键！让 ghost block 不会被世界方块遮挡。
-    //    Litematica 原版用独立 schematic world 隔离深度，WeGui 无此架构，通过禁用深度写入
-    //    实现 ghost block 始终可见（不被同位置的世界方块剔除）。深度测试仍启用，ghost block
-    //    会被前方实心方块正确遮挡。
+    // 2. 显式开启深度写入（withDepthWrite=true）：让 ghost block 之间正确遮挡（解决透视问题）
+    // 3. 极小深度偏移（withDepthBias=0.0f, -1.0f）：offset = 0*m + r*(-1) = -r（r 是最小可分辨深度差）
+    //    - 对所有 ghost block 施加相同的极小偏移，保留它们之间的相对深度差异 → ghost block 之间正确遮挡
+    //    - 让 ghost block 比同位置世界方块"近一点点"（-r），避免被同位置世界方块完全遮挡 → 纹理可见
+    //    - 注意：不能用 withDepthBias(-1.0f, -10.0f)（原版 CRUMBLING/TEXT 用的值），
+    //      那会让 offset 达到 -1，把所有 ghost block 深度推到 near plane，导致相互之间无法区分深度（透视）
+    //    Litematica 原版用独立 schematic world 隔离深度，WeGui 用极小深度偏移近似。
     private static final RenderPipeline.Snippet MATRICES_PROJECTION_SNIPPET =
             RenderPipeline.builder()
                     .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
@@ -147,7 +150,8 @@ public final class PastePreviewRenderer implements IRenderer {
             .withBlend(BlendFunction.TRANSLUCENT)
             .withVertexFormat(DefaultVertexFormat.BLOCK, VertexFormat.Mode.QUADS)
             .withCull(false)
-            .withDepthWrite(false)
+            .withDepthWrite(true)
+            .withDepthBias(0.0f, -1.0f)
             .build();
 
     private static final RenderType GHOST_BLOCK_TYPE = RenderTypeAccessor.wegui$create(
@@ -703,8 +707,9 @@ public final class PastePreviewRenderer implements IRenderer {
     /**
      * Mismatch 渲染（复刻 Litematica OverlayRenderer.renderSchematicMismatches）
      *
-     * <p>始终穿墙（NO_DEPTH_NO_CULL），仅渲染 mismatch 方块，使用 VERIFY_*_COLOR。
-     * 不受 OVERLAY_RENDER_THROUGH 控制（始终穿墙可见，与 Litematica 一致）。</p>
+     * <p>边框线使用 OFFSET_2（有深度测试，被前方方块/ghost block 遮挡），仅渲染 mismatch 方块，使用 VERIFY_*_COLOR。
+     * 与 Litematica 原版不同：原版用 NO_DEPTH_NO_CULL（始终穿墙），但用户要求边框线有正确遮挡。
+     * 填充面（层3）仍用 NO_DEPTH_NO_CULL（穿墙可见，方便定位错误），但 DEFAULT 预设下禁用填充面。</p>
      *
      * <p>层1: 边框线 (batched_lines) — 所有 mismatch 方块（排除注视方块），lineWidth=2.0f<br>
      * 层2: 注视方块加粗 (outlines) — 仅注视的 mismatch 方块，lineWidth=6.0f<br>
@@ -816,8 +821,11 @@ public final class PastePreviewRenderer implements IRenderer {
             }
         }
 
-        // Mismatch 始终使用 NO_DEPTH_NO_CULL（始终穿墙，不可配置，与 Litematica 一致）
-        RenderPipeline linePipeline = MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL;
+        // Mismatch 边框线使用 OFFSET_2（有深度测试 + polygon offset 防 z-fighting）。
+        // 注意：Litematica 原版 renderSchematicMismatches 用 NO_DEPTH_NO_CULL（始终穿墙），
+        // 但用户要求边框线有正确的遮挡（被前方方块/ghost block 挡住），故改为 OFFSET_2。
+        // 填充面（层3）仍用 NO_DEPTH_NO_CULL（穿墙可见，方便定位错误），但 DEFAULT 预设下禁用填充面。
+        RenderPipeline linePipeline = MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_OFFSET_2;
         RenderPipeline sidePipeline = MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT_NO_DEPTH_NO_CULL;
 
         // ========== 层1: 边框线 + 层2: 注视方块加粗 ==========
