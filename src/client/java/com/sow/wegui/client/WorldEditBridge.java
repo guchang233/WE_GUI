@@ -1,6 +1,5 @@
 package com.sow.wegui.client;
 
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.WorldEdit;
@@ -24,9 +23,7 @@ import com.sow.wegui.WeGuiMod;
 import com.sow.wegui.WeStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
@@ -40,8 +37,6 @@ import java.util.Map;
  */
 public final class WorldEditBridge {
     private WorldEditBridge() {}
-
-    private static java.lang.reflect.Field POSITION2_FIELD;
 
     /** WorldEdit 版本号缓存，运行时不变，避免每次 capture 重复反射查询 */
     private static volatile boolean versionChecked = false;
@@ -179,7 +174,9 @@ public final class WorldEditBridge {
                             // 应用 //flip、//rotate 等变换到方块状态（朝向、半砖上下等）
                             // 使用 WorldEdit 内部 paste 时相同的 BlockTransformExtent，确保与 //paste 结果一致
                             BaseBlock transformedBase = BlockTransformExtent.transform(base, transform);
-                            BlockState state = convertToMcState(transformedBase.toImmutableState());
+                            // 直接用 FabricAdapter.adapt 映射 WE BlockState → MC BlockState，
+                            // 比手搓的 BlockStateParser 字符串解析更高效、更准确。
+                            BlockState state = FabricAdapter.adapt(transformedBase.toImmutableState());
                             if (state == null || state.isAir()) {
                                 result.put(target, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
                                 continue;
@@ -195,17 +192,6 @@ public final class WorldEditBridge {
             return result;
         } catch (Throwable e) {
             WeGuiMod.LOGGER.debug("读取 WorldEdit 剪贴板方块失败: {}", e.toString());
-            return null;
-        }
-    }
-
-    @Nullable
-    private static BlockState convertToMcState(com.sk89q.worldedit.world.block.BlockState weState) {
-        try {
-            String str = weState.getAsString();
-            return BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, str, true).blockState();
-        } catch (CommandSyntaxException e) {
-            WeGuiMod.LOGGER.debug("无法解析方块状态: {}", weState.getAsString());
             return null;
         }
     }
@@ -254,34 +240,15 @@ public final class WorldEditBridge {
             RegionSelector selector = session.getRegionSelector(weWorld);
             if (!(selector instanceof CuboidRegionSelector cuboidSelector)) return null;
 
-            BlockVector3 p1 = cuboidSelector.getPrimaryPosition();
-            BlockVector3 p2 = getSelectorField(cuboidSelector, "position2");
+            // 用 getIncompleteRegion().getPos1()/getPos2() 公开 API 替代反射，
+            // 未设置的点返回 null，与原反射行为一致。
+            CuboidRegion incomplete = cuboidSelector.getIncompleteRegion();
+            if (incomplete == null) return null;
+            BlockVector3 p1 = incomplete.getPos1();
+            BlockVector3 p2 = incomplete.getPos2();
             return new PartialCornerPositions(
                     p1 == null ? null : new BlockPos(p1.x(), p1.y(), p1.z()),
                     p2 == null ? null : new BlockPos(p2.x(), p2.y(), p2.z()));
-        } catch (Throwable e) {
-            return null;
-        }
-    }
-
-    @Nullable
-    private static BlockVector3 getSelectorField(CuboidRegionSelector selector, String name) {
-        if (!"position2".equals(name)) {
-            // 仅缓存 position2，其他字段走旧逻辑（目前没有其他调用）
-            try {
-                java.lang.reflect.Field field = CuboidRegionSelector.class.getDeclaredField(name);
-                field.setAccessible(true);
-                return (BlockVector3) field.get(selector);
-            } catch (Throwable e) {
-                return null;
-            }
-        }
-        try {
-            if (POSITION2_FIELD == null) {
-                POSITION2_FIELD = CuboidRegionSelector.class.getDeclaredField(name);
-                POSITION2_FIELD.setAccessible(true);
-            }
-            return (BlockVector3) POSITION2_FIELD.get(selector);
         } catch (Throwable e) {
             return null;
         }
