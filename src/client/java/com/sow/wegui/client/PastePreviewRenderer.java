@@ -613,7 +613,9 @@ public final class PastePreviewRenderer implements IRenderer {
         Color4f outlineColor = new Color4f(c.r, c.g, c.b, 1.0f);
 
         // 外框线（线宽 LINE_WIDTH_AREA = 1.5f，与 Litematica placement box lineWidthArea 一致）
-        RenderUtils.renderAreaOutlineNoCorners(pos1, pos2, LINE_WIDTH_AREA, outlineColor, outlineColor, outlineColor);
+        // 使用 renderAreaOutline（不跳过角点），确保 8 个角点处三条线都交汇。
+        // 不用 renderAreaOutlineNoCorners，因为它跳过 min/max 对角点的线段，导致角点处三条线不交汇。
+        RenderUtils.renderAreaOutline(pos1, pos2, LINE_WIDTH_AREA, outlineColor, outlineColor, outlineColor);
 
         // 半透明面：需 RENDER_PASTE_BOX_SIDES 开关且 alpha > 0
         float sideAlpha = (float) Configs.RenderStyles.PASTE_BOX_SIDE_ALPHA.getDoubleValue();
