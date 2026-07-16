@@ -431,6 +431,13 @@ public final class PastePreviewRenderer implements IRenderer {
         // 实心模式直接用 source（vanilla RenderType）；半透明模式用 AlphaMultiBufferSource
         MultiBufferSource renderSource = solid ? source : new AlphaMultiBufferSource(source, alpha);
 
+        // 验证模式：方块种类错误（WRONG_BLOCK）或状态错误（WRONG_STATE）时，隐藏 ghost block 贴图。
+        // 这样用户能看到错误（ghost block 贴图消失，只看到 overlay 错误颜色边框/填充面），
+        // 否则 ghost block 始终显示"正确状态"的贴图，用户无法发现自己放错了。
+        // CORRECT / MISSING 仍正常显示贴图（MISSING 是目标位置为空气，贴图显示"将要放置的方块"）。
+        boolean verificationEnabled = Configs.Generic.BLOCK_VERIFICATION_ENABLED.getBooleanValue();
+        Level level = mc.level;
+
         for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
             // 距离剔除（按 chunk section 中心）
             double cx = (group.worldAabb.minX + group.worldAabb.maxX) * 0.5;
@@ -445,6 +452,17 @@ public final class PastePreviewRenderer implements IRenderer {
                 try {
                     BlockPos target = origin.offset(positions.get(i));
                     BlockState state = states.get(i);
+
+                    // 验证模式：方块种类错误或状态错误时，跳过贴图渲染（只保留 overlay 颜色）
+                    if (verificationEnabled) {
+                        BlockState found = level.getBlockState(target);
+                        BlockMatchStatus status = verifyBlock(state, found);
+                        if (status == BlockMatchStatus.WRONG_BLOCK
+                                || status == BlockMatchStatus.WRONG_STATE) {
+                            continue;
+                        }
+                    }
+
                     pose.pushPose();
                     pose.translate(target.getX(), target.getY(), target.getZ());
                     dispatcher.renderSingleBlock(state, pose, renderSource, packedLight, OverlayTexture.NO_OVERLAY);
