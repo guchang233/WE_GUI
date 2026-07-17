@@ -52,6 +52,13 @@ public final class ClipboardChunkCache {
         public final List<BlockPos> airPositions = new ArrayList<>();
         /** 该 section 在世界坐标系下的 AABB（用于 frustum 剔除） */
         public final AABB worldAabb;
+        /**
+         * 渲染缓存槽位：由 {@code PastePreviewRenderer} 填充，存储预计算的 BakedQuad 列表
+         * （类型为 {@code List<PastePreviewRenderer.CachedGhostBlock>}）。
+         * 当 {@code chunkCache.rebuild()} 创建新 {@code ChunkGroup} 时，此字段为 null，
+         * 触发 {@code PastePreviewRenderer} 重建缓存。
+         */
+        public Object renderCache;
 
         ChunkGroup(AABB worldAabb) {
             this.worldAabb = worldAabb;

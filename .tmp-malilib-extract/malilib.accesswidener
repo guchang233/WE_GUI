@@ -1,0 +1,28 @@
+accessWidener	v2	intermediary
+extendable	class	net/minecraft/class_332
+accessible	method	net/minecraft/class_332	<init>	(Lnet/minecraft/class_310;Lorg/joml/Matrix3x2fStack;Lnet/minecraft/class_11246;II)V
+accessible	field	net/minecraft/class_332	field_44656	Lnet/minecraft/class_310;
+accessible	field	net/minecraft/class_332	field_44657	Lorg/joml/Matrix3x2fStack;
+accessible	field	net/minecraft/class_332	field_61531	Lnet/minecraft/class_11701;
+accessible	field	net/minecraft/class_332	field_59826	Lnet/minecraft/class_11246;
+accessible	field	net/minecraft/class_332	field_61532	Lnet/minecraft/class_1059;
+accessible	field	net/minecraft/class_332	field_62463	Lnet/minecraft/class_11875;
+accessible	field	net/minecraft/class_332	field_63846	I
+accessible	field	net/minecraft/class_332	field_63847	I
+accessible	field	net/minecraft/class_332	field_60305	Ljava/lang/Runnable;
+accessible	field	net/minecraft/class_332	field_63848	Lnet/minecraft/class_2583;
+accessible	field	net/minecraft/class_332	field_63849	Lnet/minecraft/class_2583;
+accessible	method	net/minecraft/class_7529	<init>	(Lnet/minecraft/class_327;IIIILnet/minecraft/class_2561;Lnet/minecraft/class_2561;IZIZZ)V
+transitive-accessible	class	net/minecraft/class_332$class_8214
+transitive-accessible	field	net/minecraft/class_332	field_44659	Lnet/minecraft/class_332$class_8214;
+transitive-accessible	method	net/minecraft/class_342	method_1861	()I
+transitive-accessible	field	net/minecraft/class_11631	field_61558	Ljava/util/Map;
+transitive-accessible	method	net/minecraft/class_11631	method_72763	(Lnet/minecraft/class_2960;Lnet/minecraft/class_11632;)Lnet/minecraft/class_2960;
+transitive-accessible	field	net/minecraft/class_11633	field_61586	Ljava/util/Map;
+transitive-accessible	field	net/minecraft/class_11633	field_61587	Ljava/util/List;
+transitive-accessible	field	net/minecraft/class_1921	field_64013	Lnet/minecraft/class_12247;
+transitive-accessible	class	net/minecraft/class_12247$class_12338
+transitive-accessible	field	net/minecraft/class_12247	field_63987	Ljava/util/Map;
+transitive-accessible	field	net/minecraft/class_12247	field_63988	Lnet/minecraft/class_12250;
+accessible	field	net/minecraft/class_12247	field_63990	Lnet/minecraft/class_12247$class_4750;
+accessible	field	net/minecraft/class_12247	field_63996	Lnet/minecraft/class_12245;

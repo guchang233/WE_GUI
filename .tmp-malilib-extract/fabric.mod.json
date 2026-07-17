@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "id": "malilib",
+  "name": "MaLiLib",
+  "version": "0.27.16",
+  "description": "A library mod required by masa\u0027s client-side mods",
+  "authors": [
+    "masa"
+  ],
+  "contributors": [
+    "Sakura-Ryoko"
+  ],
+  "contact": {
+    "homepage": "https://www.curseforge.com/minecraft/mc-mods/malilib",
+    "issues": "https://github.com/maruohon/malilib/issues",
+    "sources": "https://github.com/maruohon/malilib",
+    "twitter": "https://twitter.com/maruohon",
+    "discord": "https://discordapp.com/channels/211786369951989762/453662800460644354/"
+  },
+  "license": "LGPLv3",
+  "icon": "assets/malilib/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "fi.dy.masa.malilib.MaLiLib"
+    ],
+    "modmenu": [
+      "fi.dy.masa.malilib.compat.modmenu.ModMenuImpl"
+    ]
+  },
+  "mixins": [
+    "mixins.malilib.json"
+  ],
+  "accessWidener": "malilib.accesswidener",
+  "depends": {
+    "minecraft": "1.21.11",
+    "fabric-networking-api-v1": "\u003e\u003d5.1.4",
+    "fabric-resource-loader-v1": "*"
+  },
+  "breaks": {
+    "sodium": "\u003c0.8.7-",
+    "iris": "\u003c1.10.7-",
+    "itemscroller": "\u003c0.30.5-",
+    "litematica": "\u003c0.26.10-",
+    "minihud": "\u003c0.38.12-",
+    "tweakeroo": "\u003c0.27.11-"
+  },
+  "jars": [
+    {
+      "file": "META-INF/jars/conditional-mixin-fabric-0.6.4.jar"
+    },
+    {
+      "file": "META-INF/jars/fabric-api-base-1.0.5+4ebb5c083e.jar"
+    },
+    {
+      "file": "META-INF/jars/fabric-networking-api-v1-5.1.6+6b6d71a53e.jar"
+    },
+    {
+      "file": "META-INF/jars/fabric-resource-loader-v1-1.0.10+78c8b4663e.jar"
+    }
+  ]
+}

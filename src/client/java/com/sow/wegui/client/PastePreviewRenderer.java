@@ -1,11 +1,18 @@
 package com.sow.wegui.client;
 
+import com.mojang.blaze3d.buffers.GpuBuffer;
+import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.shaders.UniformType;
+import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.textures.GpuSampler;
+import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -29,21 +36,29 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.network.chat.Component;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.block.model.BlockModelPart;
+import net.minecraft.client.renderer.block.model.BlockStateModel;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.rendertype.OutputTarget;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.RandomSource;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -51,11 +66,17 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fStack;
+import org.joml.Vector3f;
+import org.joml.Vector4f;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
+import java.util.OptionalInt;
 
 /**
  * paste 位置预览渲染器，全面对齐 Litematica 26.2 的渲染架构与视觉风格。
@@ -174,6 +195,40 @@ public final class PastePreviewRenderer implements IRenderer {
     // ---- chunk 分组缓存（用于 frustum / distance 剔除）----
     private final ClipboardChunkCache chunkCache = new ClipboardChunkCache();
     private boolean chunkCacheDirty = true;
+
+    // ---- 验证结果跨帧缓存（ghost blocks / mismatch / overlay 三处共享，避免每帧 N 次 getBlockState + verifyBlock）----
+    // 世界方块变化频率低（玩家放置/破坏方块），每 VERIFICATION_UPDATE_INTERVAL tick 重新验证一次即可。
+    private Map<BlockPos, BlockMatchStatus> verificationCache;
+    private BlockPos verificationCacheOrigin;
+    private long verificationCacheTick = -1;
+    private static final int VERIFICATION_UPDATE_INTERVAL = 10;  // 0.5 秒
+
+    // ---- mismatch 位置列表跨帧缓存（对齐 Litematica SchematicVerifier.getSelectedMismatchPositionsForRender）----
+    // mismatch 渲染和 overlay 渲染共享此列表，避免每帧重复遍历所有方块收集 mismatch 位置。
+    // 缓存 key: (origin, verificationCacheTick)。verificationCache 重建或 chunkCache 重建时自动失效。
+    private List<BlockPos> mismatchPositionsCache;
+    private List<BlockMatchStatus> mismatchStatusesCache;
+    private BlockPos mismatchCacheOrigin;
+    private long mismatchCacheKeyTick = -1;
+
+    // ---- ghost block 持久化 GpuBuffer 缓存（避免每帧 upload vertex buffer 的 GPU 传输开销）----
+    // 顶点用 relPos（相对 origin 的偏移，不依赖 origin），缓存可跨 origin 变化复用。
+    // 每帧渲染时 modelViewStack 已含相机旋转 R（Minecraft 在 BEFORE_TRANSLUCENT 前设置），
+    // 我们只需 pushMatrix + translate(origin - cam)：最终顶点位置 = R × (relPos + origin - cam) = R × (worldPos - cam)。
+    //
+    // 关键性能优化：直接用 GpuBuffer + RenderPass API 绘制（对齐 Litematica ChunkRenderGpuUploader），
+    // 而非走 RenderType.draw —— RenderType.draw 内部 uploadImmediateVertexBuffer 每帧上传 vertex buffer 到 GPU
+    // （~10ms for 67MB），且 meshData.close() 每次绘制后关闭 MeshData，导致缓存根本无法复用。
+    // 持久化方案：数据上传一次到 GpuBuffer，每帧只创建 RenderPass + drawIndexed，零数据传输。
+    //
+    // 失效条件：solid/alpha/packedLight/verifTick 变化（不含 origin，因顶点用 relPos）。
+    private GpuBuffer ghostVertexGpuBuffer;
+    private int ghostIndexCount;
+    private boolean ghostGpuBufferDirty = true;
+    private boolean cachedMeshSolid;
+    private float cachedMeshAlpha = -1.0f;
+    private int cachedMeshPackedLight;
+    private long cachedMeshVerifTick = -1;
 
     // ---- 固定放置模式 ----
     @Nullable
@@ -399,16 +454,11 @@ public final class PastePreviewRenderer implements IRenderer {
         ensureChunkCache(blocks, origin);
 
         // LITEMATICA 预设使用半透明模式（RENDER_BLOCKS_AS_TRANSLUCENT=true）：
-        // - 通过 AlphaMultiBufferSource 路由到 GHOST_BLOCK_TYPE（禁用深度写入）
-        // - ghost block 不会被世界方块遮挡，纹理始终可见
-        // - GHOST_BLOCK_ALPHA=1.0 时视觉上接近实心，但保持半透明混合
-        // 实心模式（RENDER_BLOCKS_AS_TRANSLUCENT=false）：使用原生 RenderType，方块以完整不透明度渲染。
+        // 通过 putBulkData 的 alpha 参数把 alpha 写入顶点颜色 alpha 通道。
+        // 实心模式 alpha=1.0（不透明），半透明模式 alpha<1.0（半透明，由 BlendFunction.TRANSLUCENT 混合）。
         boolean solid = !Configs.RenderStyles.RENDER_BLOCKS_AS_TRANSLUCENT.getBooleanValue();
         float alpha = solid ? 1.0f : (float) Configs.RenderStyles.GHOST_BLOCK_ALPHA.getDoubleValue();
         if (alpha <= 0.0f) return;
-
-        int renderDistance = Configs.RenderStyles.GHOST_RENDER_DISTANCE.getIntegerValue();
-        double renderDistSq = (double) renderDistance * renderDistance;
 
         // 光照：默认全亮度；启用假光照时使用固定光照等级（仿 Litematica FAKE_LIGHTING）
         boolean fakeLighting = Configs.RenderStyles.ENABLE_FAKE_LIGHTING.getBooleanValue();
@@ -417,63 +467,210 @@ public final class PastePreviewRenderer implements IRenderer {
         int skyLight = fakeLighting ? lightLevel : 15;
         int packedLight = LightTexture.pack(blockLight, skyLight);
 
-        Vec3 cam = context.gameRenderer().getMainCamera().position();
-        PoseStack pose = context.matrices();
-        pose.pushPose();
-        pose.translate(-cam.x, -cam.y, -cam.z);
-
-        BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
-        MultiBufferSource source = context.consumers();
-        if (source == null) {
-            pose.popPose();
-            return;
-        }
-        // 实心模式直接用 source（vanilla RenderType）；半透明模式用 AlphaMultiBufferSource
-        MultiBufferSource renderSource = solid ? source : new AlphaMultiBufferSource(source, alpha);
-
         // 验证模式：方块种类错误（WRONG_BLOCK）或状态错误（WRONG_STATE）时，隐藏 ghost block 贴图。
-        // 这样用户能看到错误（ghost block 贴图消失，只看到 overlay 错误颜色边框/填充面），
-        // 否则 ghost block 始终显示"正确状态"的贴图，用户无法发现自己放错了。
-        // CORRECT / MISSING 仍正常显示贴图（MISSING 是目标位置为空气，贴图显示"将要放置的方块"）。
         boolean verificationEnabled = Configs.Generic.BLOCK_VERIFICATION_ENABLED.getBooleanValue();
         Level level = mc.level;
 
+        // 构建验证缓存（验证模式开启时，ghost blocks / mismatch / overlay 三处共享，跨帧缓存避免每帧 getBlockState）
+        Map<BlockPos, BlockMatchStatus> verifCache = null;
+        if (verificationEnabled) {
+            verifCache = getVerificationCache(origin, level);
+        }
+
+        // 确保 ghost block BakedQuad 缓存已填充（避免每帧 renderSingleBlock 的模型查找/颜色计算开销）
+        ensureGhostBlockRenderCache();
+
+        // 检查 GpuBuffer 是否需要重建（不含 origin，因为顶点用 relPos 不依赖 origin）
+        boolean needRebuild = ghostGpuBufferDirty
+                || solid != cachedMeshSolid
+                || alpha != cachedMeshAlpha
+                || packedLight != cachedMeshPackedLight
+                || (verificationEnabled && verificationCacheTick != cachedMeshVerifTick);
+        if (needRebuild) {
+            uploadGhostBlockGpuBuffer(solid, alpha, verifCache, verificationEnabled, packedLight);
+        }
+        if (ghostVertexGpuBuffer == null || ghostIndexCount == 0) return;
+
+        // 每帧渲染：modelViewStack 已含相机旋转 R（由 Minecraft LevelRenderer 在 BEFORE_TRANSLUCENT 前设置）。
+        // 只需 pushMatrix + translate(origin - cam)，让顶点 relPos 变换到相机空间：
+        //   最终顶点位置 = R × (relPos + origin - cam) = R × (worldPos - cam)。
+        // 对齐 Litematica WorldRendererSchematic.renderBlockOverlays 的 pushMatrix + translate(chunkOrigin - cam) 方案。
+        Camera camera = context.gameRenderer().getMainCamera();
+        Vec3 cam = camera.position();
+        Matrix4fStack stack = RenderSystem.getModelViewStack();
+        stack.pushMatrix();
+        stack.translate(origin.getX() - (float) cam.x,
+                        origin.getY() - (float) cam.y,
+                        origin.getZ() - (float) cam.z);
+        try {
+            drawGhostBlocksFromGpu();
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.debug("WeGui ghost blocks draw 出错: {}", e.toString());
+        } finally {
+            stack.popMatrix();
+        }
+    }
+
+    /**
+     * 上传 ghost block 顶点到持久化 GpuBuffer（对齐 Litematica ChunkRenderGpuUploader.uploadBuffersByLayer）。
+     *
+     * <p>顶点用 <b>relPos</b>（方块相对 origin 的偏移），不依赖 origin，因此缓存可跨 origin 变化复用：
+     * FOLLOW_PLAYER 模式下玩家每跨方块边界时 origin 变化，但缓存仍然有效，避免每帧 putBulkData。
+     *
+     * <p>每帧渲染时 modelViewStack 已含相机旋转 R（由 Minecraft 在 BEFORE_TRANSLUCENT 前设置），
+     * 我们只需 pushMatrix + translate(origin - cam)，最终顶点位置 = R × (relPos + origin - cam) = R × (worldPos - cam)。
+     *
+     * <p>alpha 调制直接写入顶点颜色 alpha 通道（putBulkData 的 alpha 参数），无需 uniform。
+     *
+     * <p>关键优化：上传一次到 GpuBuffer 后立即 close MeshData 释放 CPU 端内存，
+     * 之后每帧渲染直接用 GpuBuffer + RenderPass API 绘制，零数据传输（对比 RenderType.draw 每帧 upload）。
+     *
+     * <p>失效条件：solid/alpha/packedLight/verificationCacheTick 变化。
+     * 不含 origin（顶点用 relPos），origin 变化由 modelViewStack 实时处理。
+     */
+    @SuppressWarnings("unchecked")
+    private void uploadGhostBlockGpuBuffer(boolean solid, float alpha,
+            Map<BlockPos, BlockMatchStatus> verifCache, boolean verificationEnabled, int packedLight) {
+        // 关闭旧 GpuBuffer
+        if (ghostVertexGpuBuffer != null) {
+            ghostVertexGpuBuffer.close();
+            ghostVertexGpuBuffer = null;
+        }
+        ghostIndexCount = 0;
+
+        ByteBufferBuilder alloc = new ByteBufferBuilder(2 * 1024 * 1024);
+        BufferBuilder builder = new BufferBuilder(alloc, VertexFormat.Mode.QUADS, DefaultVertexFormat.BLOCK);
+        // 顶点用 relPos（不依赖 origin），缓存可跨 origin 变化复用
+        PoseStack pose = new PoseStack();
+        PoseStack.Pose poseEntry = pose.last();
+        Matrix4f poseMatrix = poseEntry.pose();
+        boolean anyVertex = false;
+
         for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
-            // 距离剔除（按 chunk section 中心）
-            double cx = (group.worldAabb.minX + group.worldAabb.maxX) * 0.5;
-            double cy = (group.worldAabb.minY + group.worldAabb.maxY) * 0.5;
-            double cz = (group.worldAabb.minZ + group.worldAabb.maxZ) * 0.5;
-            double distSq = (cx - cam.x) * (cx - cam.x) + (cy - cam.y) * (cy - cam.y) + (cz - cam.z) * (cz - cam.z);
-            if (distSq > renderDistSq) continue;
-
-            List<BlockPos> positions = group.relPositions;
-            List<BlockState> states = group.states;
-            for (int i = 0; i < positions.size(); i++) {
+            List<CachedGhostBlock> cache = (List<CachedGhostBlock>) group.renderCache;
+            if (cache == null) continue;
+            for (CachedGhostBlock cached : cache) {
                 try {
-                    BlockPos target = origin.offset(positions.get(i));
-                    BlockState state = states.get(i);
-
-                    // 验证模式：方块种类错误或状态错误时，跳过贴图渲染（只保留 overlay 颜色）
-                    if (verificationEnabled) {
-                        BlockState found = level.getBlockState(target);
-                        BlockMatchStatus status = verifyBlock(state, found);
+                    if (verificationEnabled && verifCache != null) {
+                        BlockMatchStatus status = verifCache.get(cached.relPos);
                         if (status == BlockMatchStatus.WRONG_BLOCK
                                 || status == BlockMatchStatus.WRONG_STATE) {
                             continue;
                         }
                     }
-
-                    pose.pushPose();
-                    pose.translate(target.getX(), target.getY(), target.getZ());
-                    dispatcher.renderSingleBlock(state, pose, renderSource, packedLight, OverlayTexture.NO_OVERLAY);
-                    pose.popPose();
+                    poseMatrix.setTranslation(cached.relPos.getX(), cached.relPos.getY(), cached.relPos.getZ());
+                    for (BakedQuad quad : cached.allQuads) {
+                        float r2 = quad.isTinted() ? cached.r : 1.0f;
+                        float g2 = quad.isTinted() ? cached.g : 1.0f;
+                        float b2 = quad.isTinted() ? cached.b : 1.0f;
+                        builder.putBulkData(poseEntry, quad, r2, g2, b2, alpha, packedLight, OverlayTexture.NO_OVERLAY);
+                        anyVertex = true;
+                    }
                 } catch (Throwable e) {
                     WeGuiMod.LOGGER.debug("跳过无法渲染的预览方块: {}", e.toString());
                 }
             }
         }
 
-        pose.popPose();
+        if (anyVertex) {
+            MeshData meshData = null;
+            try {
+                meshData = builder.build();
+                if (meshData != null) {
+                    // 上传到持久化 GpuBuffer（usage=40 表示 VERTEX | COPY_DST，对齐 Litematica）
+                    ghostVertexGpuBuffer = RenderSystem.getDevice().createBuffer(
+                            () -> "wegui:ghost_block_vertices",
+                            40,
+                            meshData.vertexBuffer()
+                    );
+                    ghostIndexCount = meshData.drawState().indexCount();
+                }
+            } catch (Throwable e) {
+                WeGuiMod.LOGGER.debug("ghost block GpuBuffer 构建失败: {}", e.toString());
+            } finally {
+                // 数据已在 GpuBuffer 中，立即关闭 MeshData 释放 CPU 端内存
+                if (meshData != null) {
+                    meshData.close();
+                }
+            }
+        }
+        cachedMeshSolid = solid;
+        cachedMeshAlpha = alpha;
+        cachedMeshPackedLight = packedLight;
+        cachedMeshVerifTick = verificationCacheTick;
+        ghostGpuBufferDirty = false;
+    }
+
+    /**
+     * 直接用 RenderPass API 绘制持久化 GpuBuffer（对齐 Litematica WorldRendererSchematic.drawOverlayInternal）。
+     *
+     * <p>关键性能点：跳过 RenderType.draw 的 uploadImmediateVertexBuffer（每帧上传 ~10ms for 67MB）
+     * 和 meshData.close()，使用已在 GPU 上的持久化 GpuBuffer，每帧只创建 RenderPass + drawIndexed。
+     *
+     * <p>实现参照 RenderType.draw 源码（decompile_out/RenderType.java line 55-130）：
+     * <ol>
+     *   <li>writeTransform 写 DynamicTransforms uniform（含 modelViewMatrix、color、offset、textureMatrix）</li>
+     *   <li>获取 RenderTarget 的 color/depth view</li>
+     *   <li>createRenderPass → setPipeline → bindDefaultUniforms → setUniform → setVertexBuffer →
+     *       bindTexture(Sampler0=block atlas, Sampler2=lightmap) → setIndexBuffer → drawIndexed</li>
+     * </ol>
+     *
+     * <p>纹理解析对齐 RenderSetup.getTextures()：
+     * <ul>
+     *   <li>Sampler0（block atlas）：mc.getTextureManager().getTexture(LOCATION_BLOCKS).getTextureView() + .getSampler()</li>
+     *   <li>Sampler2（lightmap）：mc.gameRenderer.lightTexture().getTextureView() + getClampToEdge(LINEAR)</li>
+     * </ul>
+     */
+    private void drawGhostBlocksFromGpu() {
+        if (ghostVertexGpuBuffer == null || ghostIndexCount == 0) return;
+
+        Minecraft mc = Minecraft.getInstance();
+
+        // 1. 写 DynamicTransforms uniform（color=白色，offset=零，textureMatrix=identity）
+        // GHOST_BLOCK_TYPE 没设 textureTransform，默认 TextureTransform.DEFAULT_TEXTURING 是 identity
+        GpuBufferSlice gpuBufferSlice = RenderSystem.getDynamicUniforms().writeTransform(
+                RenderSystem.getModelViewMatrix(),
+                new Vector4f(1.0f, 1.0f, 1.0f, 1.0f),
+                new Vector3f(),
+                new Matrix4f()  // identity textureMatrix
+        );
+
+        // 2. 解析纹理（对齐 RenderSetup.getTextures()，但通过 AbstractTexture API 绕过 RenderContext checkcast）
+        AbstractTexture blockAtlas = mc.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS);
+        GpuTextureView atlasView = blockAtlas.getTextureView();
+        GpuSampler atlasSampler = blockAtlas.getSampler();
+        GpuTextureView lightmapView = mc.gameRenderer.lightTexture().getTextureView();
+        GpuSampler lightmapSampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+
+        // 3. 获取 RenderTarget（OutputTarget.MAIN_TARGET 等同于 mc.getMainRenderTarget()）
+        RenderTarget renderTarget = mc.getMainRenderTarget();
+        GpuTextureView colorView = renderTarget.getColorTextureView();
+        GpuTextureView depthView = renderTarget.useDepth ? renderTarget.getDepthTextureView() : null;
+
+        // 4. 获取 index buffer（QUADS 模式 BufferBuilder 不产生 indexBuffer，用 AutoStorageIndexBuffer）
+        RenderSystem.AutoStorageIndexBuffer autoStorageIndexBuffer =
+                RenderSystem.getSequentialBuffer(VertexFormat.Mode.QUADS);
+        GpuBuffer indexBuffer = autoStorageIndexBuffer.getBuffer(ghostIndexCount);
+        VertexFormat.IndexType indexType = autoStorageIndexBuffer.type();
+
+        // 5. 创建 RenderPass 并绘制
+        try (RenderPass renderPass = RenderSystem.getDevice()
+                .createCommandEncoder()
+                .createRenderPass(
+                        () -> "wegui:ghost_block_immediate",
+                        colorView, OptionalInt.empty(),
+                        depthView, OptionalDouble.empty())) {
+            renderPass.setPipeline(GHOST_BLOCK_PIPELINE);
+            RenderSystem.bindDefaultUniforms(renderPass);
+            renderPass.setUniform("DynamicTransforms", gpuBufferSlice);
+            renderPass.setVertexBuffer(0, ghostVertexGpuBuffer);
+            renderPass.bindTexture("Sampler0", atlasView, atlasSampler);
+            renderPass.bindTexture("Sampler2", lightmapView, lightmapSampler);
+            renderPass.setIndexBuffer(indexBuffer, indexType);
+            renderPass.drawIndexed(0, 0, ghostIndexCount, 1);
+        } catch (Throwable e) {
+            WeGuiMod.LOGGER.debug("WeGui ghost blocks GpuBuffer draw 出错: {}", e.toString());
+        }
     }
 
     // ========================================================================
@@ -520,8 +717,15 @@ public final class PastePreviewRenderer implements IRenderer {
                 renderPasteBox(frustum);
                 profiler.pop();
 
+                // 预构建 mismatch 位置列表缓存（层 ④⑤ 共享，跨帧缓存避免每帧重复遍历所有方块）
+                boolean verificationEnabled = Configs.Generic.BLOCK_VERIFICATION_ENABLED.getBooleanValue();
+                boolean overlayEnabled = Configs.RenderStyles.ENABLE_OVERLAY.getBooleanValue();
+                if (verificationEnabled || overlayEnabled) {
+                    ensureMismatchCache(origin, mc.level);
+                }
+
                 // 层 ④：Mismatch 渲染（始终穿墙，仅验证模式，复刻 Litematica renderSchematicMismatches）
-                if (Configs.Generic.BLOCK_VERIFICATION_ENABLED.getBooleanValue()) {
+                if (verificationEnabled) {
                     profiler.push("mismatch");
                     renderSchematicMismatches(frustum, camera, origin, mc.level);
                     profiler.pop();
@@ -529,7 +733,7 @@ public final class PastePreviewRenderer implements IRenderer {
 
                 // 层 ⑤：Schematic Overlay（可配置穿墙，复刻 Litematica renderBlockOverlays）
                 // 始终按验证状态着色（CORRECT 跳过，WRONG_BLOCK/WRONG_STATE/MISSING/EXTRA 各自颜色）
-                if (Configs.RenderStyles.ENABLE_OVERLAY.getBooleanValue()) {
+                if (overlayEnabled) {
                     profiler.push("schematic_overlay");
                     renderSchematicOverlay(frustum, camera, origin, mc.level);
                     profiler.pop();
@@ -644,6 +848,115 @@ public final class PastePreviewRenderer implements IRenderer {
     }
 
     /**
+     * 获取验证结果缓存：遍历所有剪贴板方块，对每个位置调用一次 level.getBlockState + verifyBlock。
+     * ghost blocks / mismatch / overlay 三处渲染共享此缓存。
+     *
+     * <p>缓存 key 用 <b>relPos</b>（相对 origin 的偏移），不依赖 origin：
+     * 这样 FOLLOW_PLAYER 模式下 origin 变化时缓存仍然有效，避免每帧重建（重建会触发 ghost block MeshData 重建）。
+     * origin 变化时只需要重新查 worldPos = origin + relPos 的世界方块，但这是按超时周期重新执行的。
+     *
+     * <p>跨帧缓存：每 VERIFICATION_UPDATE_INTERVAL tick 重新验证一次（世界方块变化频率低）。
+     */
+    private Map<BlockPos, BlockMatchStatus> getVerificationCache(BlockPos origin, Level level) {
+        long tick = level.getGameTime();
+        // 缓存有效：未超时（不依赖 origin，因为 key 用 relPos）
+        if (verificationCache != null
+                && verificationCacheTick >= 0
+                && tick - verificationCacheTick < VERIFICATION_UPDATE_INTERVAL) {
+            return verificationCache;
+        }
+        // 重建缓存：key 用 relPos（不依赖 origin）
+        Map<BlockPos, BlockMatchStatus> cache = new HashMap<>();
+        if (cachedBlocks != null) {
+            for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
+                List<BlockPos> positions = group.relPositions;
+                List<BlockState> states = group.states;
+                for (int i = 0; i < positions.size(); i++) {
+                    BlockPos rel = positions.get(i);
+                    BlockPos target = origin.offset(rel);
+                    BlockState found = level.getBlockState(target);
+                    cache.put(rel, verifyBlock(states.get(i), found));
+                }
+                // EXTRA 检测：原理图空气位置 + 世界非空 = 多余方块
+                for (BlockPos rel : group.airPositions) {
+                    BlockPos target = origin.offset(rel);
+                    BlockState found = level.getBlockState(target);
+                    BlockState expected = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+                    cache.put(rel, verifyBlock(expected, found));
+                }
+            }
+        }
+        verificationCache = cache;
+        verificationCacheOrigin = origin;
+        verificationCacheTick = tick;
+        return cache;
+    }
+
+    /**
+     * 填充 mismatch 位置列表跨帧缓存（对齐 Litematica {@code SchematicVerifier.getSelectedMismatchPositionsForRender}）。
+     *
+     * <p>mismatch 渲染（{@link #renderSchematicMismatches}）和 overlay 渲染（{@link #renderSchematicOverlay}）
+     * 共享此缓存，避免每帧重复遍历所有方块收集 mismatch 位置。</p>
+     *
+     * <p>缓存失效条件（与 verificationCache 同步）：
+     * <ul>
+     *   <li>tick 超时 → verificationCache 重建 → verificationCacheTick 变化 → 此缓存失效</li>
+     *   <li>chunkCache 重建（剪贴板变化）→ {@link #invalidateMismatchCache} 显式清空</li>
+     * </ul>
+     * 距离剔除、frustum 剔除不在收集阶段做（否则缓存无法跨帧复用），由调用方在渲染时按需过滤。</p>
+     *
+     * <p>注意：positions 列表存的是 worldPos（origin + relPos），因为 mismatch 渲染需要按世界坐标绘制边框。
+     * 但 verifCache 的 key 是 relPos（不依赖 origin），所以这里查 verifCache 用 rel，存 positions 用 target。
+     * 这意味着 origin 变化时 positions 列表也需重建（即 origin 也参与缓存 key）。
+     */
+    private void ensureMismatchCache(BlockPos origin, Level level) {
+        // 先确保 verificationCache 已构建（同步更新 verificationCacheTick）
+        getVerificationCache(origin, level);
+
+        // 检查缓存有效性：origin 不变 + verificationCacheTick 不变
+        if (mismatchPositionsCache != null
+                && origin.equals(mismatchCacheOrigin)
+                && verificationCacheTick == mismatchCacheKeyTick) {
+            return;
+        }
+
+        // 重建：遍历所有方块，收集需要渲染的 mismatch 位置和状态
+        List<BlockPos> positions = new ArrayList<>();
+        List<BlockMatchStatus> statuses = new ArrayList<>();
+        Map<BlockPos, BlockMatchStatus> verifCache = verificationCache;
+        if (verifCache != null) {
+            for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
+                for (BlockPos rel : group.relPositions) {
+                    BlockMatchStatus status = verifCache.get(rel);
+                    if (status == null || status == BlockMatchStatus.CORRECT) continue;
+                    if (!shouldRenderMismatchType(status)) continue;
+                    positions.add(origin.offset(rel));
+                    statuses.add(status);
+                }
+                for (BlockPos rel : group.airPositions) {
+                    BlockMatchStatus status = verifCache.get(rel);
+                    if (status == null || status == BlockMatchStatus.CORRECT) continue;
+                    if (!shouldRenderMismatchType(status)) continue;
+                    positions.add(origin.offset(rel));
+                    statuses.add(status);
+                }
+            }
+        }
+
+        mismatchPositionsCache = positions;
+        mismatchStatusesCache = statuses;
+        mismatchCacheOrigin = origin;
+        mismatchCacheKeyTick = verificationCacheTick;
+    }
+
+    /** 失效 mismatch 位置缓存（在 chunkCache 重建时调用） */
+    private void invalidateMismatchCache() {
+        mismatchPositionsCache = null;
+        mismatchStatusesCache = null;
+        mismatchCacheKeyTick = -1;
+    }
+
+    /**
      * 对比期望方块状态与世界实际方块状态，返回验证结果。
      * 严格复刻 Litematica {@code ChunkRendererSchematicVbo.getOverlayType} 的判断顺序：
      * <ol>
@@ -739,6 +1052,7 @@ public final class PastePreviewRenderer implements IRenderer {
         if (chunkCache.isEmpty()) return;
         if (!Configs.RenderStyles.ENABLE_OVERLAY.getBooleanValue()) return;
         if (!Configs.Generic.BLOCK_VERIFICATION_ENABLED.getBooleanValue()) return;
+        if (mismatchPositionsCache == null || mismatchStatusesCache == null) return;
 
         Minecraft mc = Minecraft.getInstance();
         int renderDistance = Configs.RenderStyles.GHOST_RENDER_DISTANCE.getIntegerValue();
@@ -754,102 +1068,71 @@ public final class PastePreviewRenderer implements IRenderer {
 
         BlockPos lookPos = getLookPos(mc);
         BlockPos lookedTarget = null;
-        Color4f lookedColor = null;
+        BlockMatchStatus lookedStatus = null;
 
-        // 收集 mismatch 方块（带 culling、距离剔除、类型过滤）
+        // 从跨帧缓存中收集可见的 mismatch 方块（带距离剔除）
+        // 缓存已做类型过滤（shouldRenderMismatchType），此处只需距离剔除 + 注视方块检测
         List<BlockPos> mismatchPositions = new ArrayList<>();
-        List<Color4f> mismatchColors = new ArrayList<>();
+        List<BlockMatchStatus> mismatchStatuses = new ArrayList<>();
 
-        for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
-            if (enableCulling && !frustum.isVisible(group.worldAabb)) continue;
-
-            double cx = (group.worldAabb.minX + group.worldAabb.maxX) * 0.5;
-            double cy = (group.worldAabb.minY + group.worldAabb.maxY) * 0.5;
-            double cz = (group.worldAabb.minZ + group.worldAabb.maxZ) * 0.5;
-            double distSq = (cx - camPos.x) * (cx - camPos.x)
-                    + (cy - camPos.y) * (cy - camPos.y)
-                    + (cz - camPos.z) * (cz - camPos.z);
-            if (distSq > renderDistSq) continue;
-
-            List<BlockPos> positions = group.relPositions;
-            for (BlockPos rel : positions) {
-                BlockPos target = origin.offset(rel);
-                BlockState expected = cachedBlocks != null ? cachedBlocks.get(rel) : null;
-                if (expected == null) continue;
-                BlockState found = level.getBlockState(target);
-                BlockMatchStatus status = verifyBlock(expected, found);
-                if (!shouldRenderMismatchType(status)) continue;
-                Color4f color = getVerifyColor(status);
-                if (color == null) continue;
-                mismatchPositions.add(target);
-                mismatchColors.add(color);
-                if (lookPos != null && lookPos.equals(target)) {
-                    lookedTarget = target;
-                    lookedColor = color;
-                }
+        for (int i = 0; i < mismatchPositionsCache.size(); i++) {
+            BlockPos target = mismatchPositionsCache.get(i);
+            if (enableCulling) {
+                double dx = target.getX() + 0.5 - camPos.x;
+                double dy = target.getY() + 0.5 - camPos.y;
+                double dz = target.getZ() + 0.5 - camPos.z;
+                if (dx * dx + dy * dy + dz * dz > renderDistSq) continue;
             }
-
-            // EXTRA 检测：原理图空气位置 + 世界非空 = 多余方块
-            for (BlockPos rel : group.airPositions) {
-                BlockPos target = origin.offset(rel);
-                BlockState found = level.getBlockState(target);
-                if (found.isAir()) continue;
-                if (!shouldRenderMismatchType(BlockMatchStatus.EXTRA)) continue;
-                Color4f color = getVerifyColor(BlockMatchStatus.EXTRA);
-                if (color == null) continue;
-                mismatchPositions.add(target);
-                mismatchColors.add(color);
-                if (lookPos != null && lookPos.equals(target)) {
-                    lookedTarget = target;
-                    lookedColor = color;
-                }
+            BlockMatchStatus status = mismatchStatusesCache.get(i);
+            mismatchPositions.add(target);
+            mismatchStatuses.add(status);
+            if (lookPos != null && lookPos.equals(target)) {
+                lookedTarget = target;
+                lookedStatus = status;
             }
         }
 
+        if (mismatchPositions.isEmpty()) return;
+
         // 位置限制（按距离截断，对齐 Litematica VERIFIER_ERROR_HILIGHT_MAX_POSITIONS）
-        if (!mismatchPositions.isEmpty()) {
-            int maxPositions = Configs.RenderStyles.VERIFIER_ERROR_HILIGHT_MAX_POSITIONS.getIntegerValue();
-            if (mismatchPositions.size() > maxPositions) {
-                final List<BlockPos> positionsForSort = mismatchPositions;
-                final List<Color4f> colorsForSort = mismatchColors;
-                List<Integer> indices = new ArrayList<>();
-                for (int i = 0; i < positionsForSort.size(); i++) indices.add(i);
-                indices.sort((a, b) -> {
-                    BlockPos pa = positionsForSort.get(a);
-                    BlockPos pb = positionsForSort.get(b);
-                    double da = (pa.getX() - camPos.x) * (pa.getX() - camPos.x)
-                            + (pa.getY() - camPos.y) * (pa.getY() - camPos.y)
-                            + (pa.getZ() - camPos.z) * (pa.getZ() - camPos.z);
-                    double db = (pb.getX() - camPos.x) * (pb.getX() - camPos.x)
-                            + (pb.getY() - camPos.y) * (pb.getY() - camPos.y)
-                            + (pb.getZ() - camPos.z) * (pb.getZ() - camPos.z);
-                    return Double.compare(da, db);
-                });
-                List<BlockPos> truncPos = new ArrayList<>();
-                List<Color4f> truncCol = new ArrayList<>();
-                for (int i = 0; i < maxPositions; i++) {
-                    int idx = indices.get(i);
-                    truncPos.add(positionsForSort.get(idx));
-                    truncCol.add(colorsForSort.get(idx));
-                }
-                mismatchPositions = truncPos;
-                mismatchColors = truncCol;
-                if (lookedTarget != null && !mismatchPositions.contains(lookedTarget)) {
-                    lookedTarget = null;
-                    lookedColor = null;
-                }
+        int maxPositions = Configs.RenderStyles.VERIFIER_ERROR_HILIGHT_MAX_POSITIONS.getIntegerValue();
+        if (mismatchPositions.size() > maxPositions) {
+            final List<BlockPos> positionsForSort = mismatchPositions;
+            final Vec3 camSort = camPos;
+            List<Integer> indices = new ArrayList<>();
+            for (int i = 0; i < positionsForSort.size(); i++) indices.add(i);
+            indices.sort((a, b) -> {
+                BlockPos pa = positionsForSort.get(a);
+                BlockPos pb = positionsForSort.get(b);
+                double da = (pa.getX() - camSort.x) * (pa.getX() - camSort.x)
+                        + (pa.getY() - camSort.y) * (pa.getY() - camSort.y)
+                        + (pa.getZ() - camSort.z) * (pa.getZ() - camSort.z);
+                double db = (pb.getX() - camSort.x) * (pb.getX() - camSort.x)
+                        + (pb.getY() - camSort.y) * (pb.getY() - camSort.y)
+                        + (pb.getZ() - camSort.z) * (pb.getZ() - camSort.z);
+                return Double.compare(da, db);
+            });
+            List<BlockPos> truncPos = new ArrayList<>();
+            List<BlockMatchStatus> truncStatus = new ArrayList<>();
+            for (int i = 0; i < maxPositions; i++) {
+                int idx = indices.get(i);
+                truncPos.add(positionsForSort.get(idx));
+                truncStatus.add(mismatchStatuses.get(idx));
+            }
+            mismatchPositions = truncPos;
+            mismatchStatuses = truncStatus;
+            if (lookedTarget != null && !mismatchPositions.contains(lookedTarget)) {
+                lookedTarget = null;
+                lookedStatus = null;
             }
         }
 
         // Mismatch 边框线使用 OFFSET_2（有深度测试 + polygon offset 防 z-fighting）。
-        // 注意：Litematica 原版 renderSchematicMismatches 用 NO_DEPTH_NO_CULL（始终穿墙），
-        // 但用户要求边框线有正确的遮挡（被前方方块/ghost block 挡住），故改为 OFFSET_2。
-        // 填充面（层3）仍用 NO_DEPTH_NO_CULL（穿墙可见，方便定位错误），但 DEFAULT 预设下禁用填充面。
         RenderPipeline linePipeline = MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_OFFSET_2;
         RenderPipeline sidePipeline = MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT_NO_DEPTH_NO_CULL;
 
         // ========== 层1: 边框线 + 层2: 注视方块加粗 ==========
-        if (enableOutlines && !mismatchPositions.isEmpty()) {
+        if (enableOutlines) {
             try (RenderContext ctx = new RenderContext(
                     () -> "wegui:mismatch/batched_lines",
                     linePipeline)) {
@@ -860,13 +1143,12 @@ public final class PastePreviewRenderer implements IRenderer {
                 BlockPos prevPos = null;
                 for (int i = 0; i < mismatchPositions.size(); i++) {
                     BlockPos target = mismatchPositions.get(i);
-                    Color4f c = mismatchColors.get(i);
                     if (target.equals(lookedTarget)) {
                         prevPos = target;
                         continue;
                     }
-                    // 边框线强制 alpha=1.0（对齐 Litematica OverlayRenderer.renderSchematicMismatches:390，
-                    // MismatchType.getColor() 返回纯色 alpha=1.0）
+                    Color4f c = getVerifyColor(mismatchStatuses.get(i));
+                    // 边框线强制 alpha=1.0（对齐 Litematica OverlayRenderer.renderSchematicMismatches:390）
                     Color4f lineColor = new Color4f(c.r, c.g, c.b, 1.0f);
                     RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(target, lineColor, OUTLINE_EXPAND, LINE_WIDTH_MISMATCH, buffer);
                     if (renderConnections && prevPos != null && !prevPos.equals(target)) {
@@ -886,12 +1168,12 @@ public final class PastePreviewRenderer implements IRenderer {
                 }
 
                 // ========== 层2: 注视方块加粗 ==========
-                if (lookedTarget != null && lookedColor != null) {
+                if (lookedTarget != null && lookedStatus != null) {
                     BufferBuilder boldBuffer = ctx.start(
                             () -> "wegui:mismatch/outlines",
                             linePipeline);
-                    // 注视方块边框也强制 alpha=1.0
-                    Color4f lookedBold = new Color4f(lookedColor.r, lookedColor.g, lookedColor.b, 1.0f);
+                    Color4f lookedC = getVerifyColor(lookedStatus);
+                    Color4f lookedBold = new Color4f(lookedC.r, lookedC.g, lookedC.b, 1.0f);
                     RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(lookedTarget, lookedBold, OUTLINE_EXPAND, LINE_WIDTH_MISMATCH_LOOKED, boldBuffer);
                     try {
                         MeshData meshData = boldBuffer.build();
@@ -908,7 +1190,7 @@ public final class PastePreviewRenderer implements IRenderer {
         }
 
         // ========== 层3: mismatch 填充面（始终穿墙 NO_DEPTH_NO_CULL）==========
-        if (renderSides && !mismatchPositions.isEmpty()) {
+        if (renderSides) {
             try (RenderContext sideCtx = new RenderContext(
                     () -> "wegui:mismatch/side_quads",
                     sidePipeline)) {
@@ -918,7 +1200,7 @@ public final class PastePreviewRenderer implements IRenderer {
                 for (int i = 0; i < mismatchPositions.size(); i++) {
                     BlockPos pos = mismatchPositions.get(i);
                     if (reducedInnerSides && !isBlockExposed(pos, level)) continue;
-                    Color4f c = mismatchColors.get(i);
+                    Color4f c = getVerifyColor(mismatchStatuses.get(i));
                     Color4f sideColor = new Color4f(c.r, c.g, c.b, sideAlpha);
                     RenderUtils.renderAreaSidesBatched(pos, pos, sideColor, OUTLINE_EXPAND, sideBuffer);
                 }
@@ -955,6 +1237,7 @@ public final class PastePreviewRenderer implements IRenderer {
     private void renderSchematicOverlay(Frustum frustum, Camera camera, BlockPos origin, Level level) {
         if (chunkCache.isEmpty()) return;
         if (!Configs.RenderStyles.ENABLE_OVERLAY.getBooleanValue()) return;
+        if (mismatchPositionsCache == null || mismatchStatusesCache == null) return;
 
         int renderDistance = Configs.RenderStyles.GHOST_RENDER_DISTANCE.getIntegerValue();
         double renderDistSq = (double) renderDistance * renderDistance;
@@ -978,53 +1261,21 @@ public final class PastePreviewRenderer implements IRenderer {
         boolean enableOutlines = Configs.RenderStyles.OVERLAY_ENABLE_OUTLINES.getBooleanValue();
         boolean enableSides = Configs.RenderStyles.OVERLAY_ENABLE_SIDES.getBooleanValue();
 
-        // 严格复刻 Litematica ChunkRendererSchematicVbo.getOverlayType + getOverlayColor：
-        // overlay 始终按方块验证状态着色，CORRECT 不渲染（仅 ghost block 显示原纹理），
-        // WRONG_BLOCK=红 / WRONG_STATE=橙 / MISSING=青 / EXTRA=品红。
-        // 不再使用单一颜色模式（BLOCK_OVERLAY_COLOR 已废弃）。
-
-        // 收集需要渲染的方块
+        // 从跨帧缓存中收集可见的 overlay 方块（带距离剔除）
+        // 缓存已做类型过滤，此处只需距离剔除
         List<BlockPos> overlayPositions = new ArrayList<>();
-        List<Color4f> overlayColors = new ArrayList<>();
+        List<BlockMatchStatus> overlayStatuses = new ArrayList<>();
 
-        for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
-            if (enableCulling && !frustum.isVisible(group.worldAabb)) continue;
-
-            double cx = (group.worldAabb.minX + group.worldAabb.maxX) * 0.5;
-            double cy = (group.worldAabb.minY + group.worldAabb.maxY) * 0.5;
-            double cz = (group.worldAabb.minZ + group.worldAabb.maxZ) * 0.5;
-            double distSq = (cx - camPos.x) * (cx - camPos.x)
-                    + (cy - camPos.y) * (cy - camPos.y)
-                    + (cz - camPos.z) * (cz - camPos.z);
-            if (distSq > renderDistSq) continue;
-
-            List<BlockPos> positions = group.relPositions;
-            for (BlockPos rel : positions) {
-                BlockPos target = origin.offset(rel);
-                BlockState expected = cachedBlocks != null ? cachedBlocks.get(rel) : null;
-                if (expected == null) continue;
-                BlockState found = level.getBlockState(target);
-                BlockMatchStatus status = verifyBlock(expected, found);
-                // CORRECT 不渲染 overlay（Litematica getOverlayColor(NONE) 返回 null）
-                if (!shouldRenderMismatchType(status)) continue;
-                Color4f color = getVerifyColor(status);
-                if (color == null) continue;
-                overlayPositions.add(target);
-                overlayColors.add(color);
+        for (int i = 0; i < mismatchPositionsCache.size(); i++) {
+            BlockPos target = mismatchPositionsCache.get(i);
+            if (enableCulling) {
+                double dx = target.getX() + 0.5 - camPos.x;
+                double dy = target.getY() + 0.5 - camPos.y;
+                double dz = target.getZ() + 0.5 - camPos.z;
+                if (dx * dx + dy * dy + dz * dz > renderDistSq) continue;
             }
-
-            // EXTRA 检测：原理图空气位置 + 世界非空 = 多余方块（品红色标记）
-            for (BlockPos rel : group.airPositions) {
-                BlockPos target = origin.offset(rel);
-                BlockState found = level.getBlockState(target);
-                if (found.isAir()) continue; // 两者皆空 = CORRECT
-                // 原理图空气 + 世界非空 = EXTRA
-                if (!shouldRenderMismatchType(BlockMatchStatus.EXTRA)) continue;
-                Color4f color = getVerifyColor(BlockMatchStatus.EXTRA);
-                if (color == null) continue;
-                overlayPositions.add(target);
-                overlayColors.add(color);
-            }
+            overlayPositions.add(target);
+            overlayStatuses.add(mismatchStatusesCache.get(i));
         }
 
         // ========== 层1: 边框线 ==========
@@ -1039,7 +1290,7 @@ public final class PastePreviewRenderer implements IRenderer {
 
                 for (int i = 0; i < overlayPositions.size(); i++) {
                     BlockPos target = overlayPositions.get(i);
-                    Color4f c = overlayColors.get(i);
+                    Color4f c = getVerifyColor(overlayStatuses.get(i));
                     // 边框线强制 alpha=1.0（对齐 Litematica ChunkRendererSchematicVbo:813）
                     Color4f lineColor = new Color4f(c.r, c.g, c.b, 1.0f);
                     RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(target, lineColor, OUTLINE_EXPAND, lineWidth, buffer);
@@ -1070,7 +1321,7 @@ public final class PastePreviewRenderer implements IRenderer {
                 for (int i = 0; i < overlayPositions.size(); i++) {
                     BlockPos pos = overlayPositions.get(i);
                     if (reducedInnerSides && !isBlockExposed(pos, level)) continue;
-                    Color4f c = overlayColors.get(i);
+                    Color4f c = getVerifyColor(overlayStatuses.get(i));
                     // 填充面使用颜色自带的 alpha（对齐 Litematica，SCHEMATIC_OVERLAY_COLOR_* 已含 alpha）
                     RenderUtils.renderAreaSidesBatched(pos, pos, c, OUTLINE_EXPAND, sideBuffer);
                 }
@@ -1113,6 +1364,11 @@ public final class PastePreviewRenderer implements IRenderer {
     @Nullable
     private Map<BlockPos, BlockState> getClipboardBlocksCached(Minecraft mc, BlockPos origin) {
         try {
+            // 先通过 getClipboardBounds 检查剪贴板是否存在（带无剪贴板状态缓存，避免每帧抛 EmptyClipboardException）
+            if (WorldEditBridge.getClipboardBounds(mc) == null) {
+                clearCache();
+                return null;
+            }
             LocalSession session = WorldEditAdapter.session(mc.player);
             if (session == null) {
                 clearCache();
@@ -1160,12 +1416,23 @@ public final class PastePreviewRenderer implements IRenderer {
         cachedClipboardHolder = null;
         cachedTransform = null;
         chunkCacheDirty = true;
+        // chunkCache 重建意味着方块集合变化，ghost block GpuBuffer 也需要重建
+        // 立即关闭旧 GpuBuffer 释放 GPU 内存
+        if (ghostVertexGpuBuffer != null) {
+            ghostVertexGpuBuffer.close();
+            ghostVertexGpuBuffer = null;
+        }
+        ghostIndexCount = 0;
+        ghostGpuBufferDirty = true;
+        invalidateMismatchCache();
     }
 
     private void ensureChunkCache(Map<BlockPos, BlockState> blocks, BlockPos origin) {
         if (chunkCacheDirty) {
             chunkCache.rebuild(blocks, origin);
             chunkCacheDirty = false;
+            // chunkCache 重建意味着方块集合变化，mismatch 位置列表需要重新收集
+            invalidateMismatchCache();
         }
     }
 
@@ -1275,6 +1542,96 @@ public final class PastePreviewRenderer implements IRenderer {
 
         public void putBulkData(PoseStack.Pose pose, BakedQuad quad, float[] brightness, float red, float green, float blue, float alpha, int[] lightmap, int overlay) {
             delegate.putBulkData(pose, quad, brightness, red, green, blue, alpha * (this.alpha / 255f), lightmap, overlay);
+        }
+    }
+
+    // ========================================================================
+    // ghost block BakedQuad 渲染缓存
+    // ========================================================================
+
+    /**
+     * ghost block 渲染缓存条目：预计算单个方块的 BakedQuad 列表和着色信息，
+     * 避免每帧调用 {@code renderSingleBlock} 重复执行模型查找、颜色计算和 quad 收集。
+     *
+     * <p>缓存存储在 {@link ClipboardChunkCache.ChunkGroup#renderCache} 中，
+     * 当 {@code chunkCache.rebuild()} 创建新 {@code ChunkGroup} 时自动失效（renderCache=null）。</p>
+     */
+    private static final class CachedGhostBlock {
+        final BlockPos relPos;
+        final RenderType renderType;
+        /** tint 颜色（getTintIndex >= 0 的 quad 用此颜色着色） */
+        final float r, g, b;
+        /** 所有方向（含 null 方向）的 BakedQuad 合并列表 */
+        final List<BakedQuad> allQuads;
+
+        CachedGhostBlock(BlockPos relPos, RenderType renderType, float r, float g, float b, List<BakedQuad> allQuads) {
+            this.relPos = relPos;
+            this.renderType = renderType;
+            this.r = r;
+            this.g = g;
+            this.b = b;
+            this.allQuads = allQuads;
+        }
+    }
+
+    /**
+     * 为所有 {@link ClipboardChunkCache.ChunkGroup} 填充 {@code renderCache}（若尚未填充）。
+     *
+     * <p>对每个非空气方块预计算：
+     * <ul>
+     *   <li>{@link BakedModel#getQuads} 收集所有方向的 BakedQuad（固定 seed=42L，与 {@code renderSingleBlock} 一致）</li>
+     *   <li>{@link BlockColors#getColor} 计算 tint 颜色</li>
+     *   <li>{@link ItemBlockRenderTypes#getRenderType} 获取 RenderType</li>
+     * </ul>
+     * 缓存按 chunk section 组织，支持 section 级距离剔除。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private void ensureGhostBlockRenderCache() {
+        Minecraft mc = Minecraft.getInstance();
+        BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
+        BlockColors blockColors = mc.getBlockColors();
+        RandomSource random = RandomSource.create(42L);
+        Direction[] directions = Direction.values();
+
+        for (ClipboardChunkCache.ChunkGroup group : chunkCache.getGroups()) {
+            if (group.renderCache != null) continue;  // 已缓存
+
+            List<BlockPos> positions = group.relPositions;
+            List<BlockState> states = group.states;
+            List<CachedGhostBlock> cache = new ArrayList<>(positions.size());
+
+            for (int i = 0; i < positions.size(); i++) {
+                try {
+                    BlockState state = states.get(i);
+                    // renderSingleBlock 只处理 RenderShape.MODEL，其他形状跳过
+                    if (state.getRenderShape() != RenderShape.MODEL) continue;
+
+                    BlockStateModel model = dispatcher.getBlockModel(state);
+                    RenderType renderType = ItemBlockRenderTypes.getRenderType(state);
+
+                    int color = blockColors.getColor(state, null, null, 0);
+                    float r = (color >> 16 & 255) / 255f;
+                    float g = (color >> 8 & 255) / 255f;
+                    float b = (color & 255) / 255f;
+
+                    // 1.21.11 API: BlockStateModel.collectParts(RandomSource) → List<BlockModelPart>
+                    // BlockModelPart.getQuads(Direction) → List<BakedQuad>（1 参数，无 BlockState/RandomSource）
+                    List<BakedQuad> allQuads = new ArrayList<>();
+                    for (BlockModelPart part : model.collectParts(random)) {
+                        for (Direction dir : directions) {
+                            allQuads.addAll(part.getQuads(dir));
+                        }
+                        allQuads.addAll(part.getQuads(null));
+                    }
+                    if (allQuads.isEmpty()) continue;
+
+                    cache.add(new CachedGhostBlock(positions.get(i), renderType, r, g, b, allQuads));
+                } catch (Throwable ignored) {
+                    // 跳过无法获取模型的方块
+                }
+            }
+
+            group.renderCache = cache;
         }
     }
 }

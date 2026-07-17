@@ -42,6 +42,12 @@ public final class WorldEditBridge {
     private static volatile boolean versionChecked = false;
     private static String cachedVersion = "";
 
+    /**
+     * 无剪贴板状态缓存：避免无剪贴板时每帧抛 EmptyClipboardException（异常构造开销大）。
+     * 记录游戏 tick，在此 tick 之前跳过 getClipboard() 调用。
+     */
+    private static volatile long noClipboardUntilTick = 0L;
+
     public static WeStatus capture(Minecraft mc) {
         if (mc.player == null) return WeStatus.noWorldEdit();
         if (!WorldEditAdapter.isLoaded()) return WeStatus.noWorldEdit();
@@ -86,18 +92,30 @@ public final class WorldEditBridge {
     @Nullable
     private static ClipboardBounds getClipboardBounds(@Nullable LocalSession session) {
         if (session == null) return null;
+        // 短期缓存"无剪贴板"状态，避免频繁抛 EmptyClipboardException（每帧渲染都会调用）
+        Minecraft mc = Minecraft.getInstance();
+        long tick = mc.level != null ? mc.level.getGameTime() : 0L;
+        if (noClipboardUntilTick > 0 && tick < noClipboardUntilTick) {
+            return null;
+        }
         try {
             ClipboardHolder holder = session.getClipboard();
-            if (holder == null) return null;
+            if (holder == null) {
+                noClipboardUntilTick = tick + 20;  // 缓存 20 tick（1 秒）
+                return null;
+            }
             com.sk89q.worldedit.extent.clipboard.Clipboard clipboard = holder.getClipboard();
             BlockVector3 min = clipboard.getMinimumPoint();
             BlockVector3 max = clipboard.getMaximumPoint();
             BlockVector3 origin = clipboard.getOrigin();
+            noClipboardUntilTick = 0L;  // 有剪贴板，重置标志
             return new ClipboardBounds(
                     min.x(), min.y(), min.z(),
                     max.x() - min.x() + 1, max.y() - min.y() + 1, max.z() - min.z() + 1,
                     origin.x(), origin.y(), origin.z());
         } catch (Throwable e) {
+            // 无剪贴板（EmptyClipboardException），缓存 20 tick 后再重试
+            noClipboardUntilTick = tick + 20;
             return null;
         }
     }
