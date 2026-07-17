@@ -64,3 +64,34 @@ jobs:
         with:
           files: "*.jar"
           generate_release_notes: true
+
+      - name: Publish to Modrinth
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          # 只发布主产物，排除 sources/dev jar
+          files: |
+            wegui-*.jar
+            !*-sources.jar
+            !*-dev.jar
+            !*-shadow.jar
+          # 版本号从 tag 名提取（v0.4.9 -> 0.4.9）
+          name: WeGui ${{ github.ref_name }}
+          version: ${{ github.ref_name }}
+          version-type: release
+          # 用 GitHub release 自动生成的 changelog
+          changelog: ${{ github.event.release.body }}
+          changelog-file: CHANGELOG.md
+          loaders: fabric
+          game-versions: |
+            1.21.8
+            1.21.9
+            1.21.10
+            1.21.11
+          dependencies: |
+            fabric-api(required)
+            malilib(required,>=0.27.0)
+          java: |
+            21
+          fail-mode: warn
