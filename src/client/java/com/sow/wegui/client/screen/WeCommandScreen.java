@@ -234,13 +234,13 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
 
     private void addBottomButtons() {
         ButtonGeneric back = new ButtonGeneric(PADDING, this.height - 26, 70, 20, StringUtils.translate("wegui.command.back"));
-        this.addButton(back, (btn, mouseButton) -> this.mc.setScreen(null));
+        this.addButton(back, (btn, mouseButton) -> this.mc.setScreenAndShow(null));
 
         ButtonGeneric bindWand = new ButtonGeneric(this.width - 180, this.height - 26, 90, 20, StringUtils.translate("wegui.command.bind_wand"));
         this.addButton(bindWand, (btn, mouseButton) -> bindHeldItemAsWand());
 
         ButtonGeneric settings = new ButtonGeneric(this.width - 80, this.height - 26, 70, 20, StringUtils.translate("wegui.command.settings"));
-        this.addButton(settings, (btn, mouseButton) -> this.mc.setScreen(new WeGuiConfigs().setParent(this)));
+        this.addButton(settings, (btn, mouseButton) -> this.mc.setScreenAndShow(new WeGuiConfigs().setParent(this)));
     }
 
     private void bindHeldItemAsWand() {

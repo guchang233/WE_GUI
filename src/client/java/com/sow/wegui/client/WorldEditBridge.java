@@ -194,7 +194,7 @@ public final class WorldEditBridge {
                             BaseBlock transformedBase = BlockTransformExtent.transform(base, transform);
                             // 直接用 FabricAdapter.adapt 映射 WE BlockState → MC BlockState，
                             // 比手搓的 BlockStateParser 字符串解析更高效、更准确。
-                            BlockState state = FabricAdapter.adapt(transformedBase.toImmutableState());
+                            BlockState state = FabricAdapter.get().toNativeBlockState(transformedBase.toImmutableState());
                             if (state == null || state.isAir()) {
                                 result.put(target, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
                                 continue;
@@ -363,7 +363,7 @@ public final class WorldEditBridge {
                 return false;
             }
 
-            com.sk89q.worldedit.world.World weWorld = FabricAdapter.adapt(level);
+            com.sk89q.worldedit.world.World weWorld = FabricAdapter.get().fromNativeWorld(level);
             LocalSession session = WorldEditAdapter.session(player);
             if (session == null) {
                 WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: session=null, player={}", player.getName().getString());

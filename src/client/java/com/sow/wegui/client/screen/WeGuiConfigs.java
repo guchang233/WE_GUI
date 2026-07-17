@@ -33,7 +33,7 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         }
 
         ButtonGeneric panel = new ButtonGeneric(this.width - 90, y, 80, 20, StringUtils.translate("wegui.command.open_panel"));
-        this.addButton(panel, (btn, mouseButton) -> this.mc.setScreen(new WeCommandScreen()));
+        this.addButton(panel, (btn, mouseButton) -> this.mc.setScreenAndShow(new WeCommandScreen()));
     }
 
     @Override

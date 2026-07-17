@@ -1,11 +1,12 @@
 package com.sow.wegui.client;
 
 import com.sow.wegui.config.Configs;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,7 +25,7 @@ public final class ModeIndicator {
     private ModeIndicator() {}
 
     public static void register() {
-        HudRenderCallback.EVENT.register(ModeIndicator::render);
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("wegui", "mode_indicator"), (g, dt) -> render(g, dt));
     }
 
     private static void refreshCacheIfNeeded() {
@@ -46,9 +47,9 @@ public final class ModeIndicator {
         }
     }
 
-    private static void render(GuiGraphics g, DeltaTracker tickCounter) {
+    private static void render(GuiGraphicsExtractor g, DeltaTracker tickCounter) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.screen != null) return;
+        if (mc.player == null || mc.gui.screen() != null) return;
         if (!Configs.ModeIndicator.ENABLED.getBooleanValue()) return;
         if (!AxeModeHandler.isHoldingConfiguredWand(mc.player)) return;
 
@@ -93,7 +94,7 @@ public final class ModeIndicator {
         g.pose().scale(scale, scale);
 
         g.fill(0, 0, panelW, panelH, 0xCC000000);
-        g.renderOutline(0, 0, panelW, panelH, 0xFF444444);
+        g.outline(0, 0, panelW, panelH, 0xFF444444);
 
         int textY = paddingY;
         for (int i = 0; i < lines.size(); i++) {
@@ -102,7 +103,7 @@ public final class ModeIndicator {
                 case 2 -> 0xFF55FF55;
                 default -> 0xFFFFFFFF;
             };
-            g.drawString(mc.font, lines.get(i), paddingX, textY, color, false);
+            g.text(mc.font, lines.get(i), paddingX, textY, color, false);
             textY += lineHeight + 1;
         }
 

@@ -52,7 +52,7 @@ public class InventoryPickerScreen extends GuiBase {
         this.addTextField(searchField, (textField) -> true);
 
         ButtonGeneric back = new ButtonGeneric(this.width / 2 - 35, this.height - 32, 70, 20, StringUtils.translate("wegui.command.back"));
-        this.addButton(back, (btn, mouseButton) -> this.mc.setScreen(parent));
+        this.addButton(back, (btn, mouseButton) -> this.mc.setScreenAndShow(parent));
     }
 
     @Override
@@ -116,7 +116,7 @@ public class InventoryPickerScreen extends GuiBase {
 
         String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
         onSelected.accept(id);
-        this.mc.setScreen(parent);
+        this.mc.setScreenAndShow(parent);
         return true;
     }
 

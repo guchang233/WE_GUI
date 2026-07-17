@@ -162,7 +162,7 @@ public class ParamInputScreen extends GuiBase {
         this.addButton(exec, (btn, mouseButton) -> execute());
 
         ButtonGeneric back = new ButtonGeneric(this.width / 2 + 6, this.height - 30, bw, 20, StringUtils.translate("wegui.command.back"));
-        this.addButton(back, (btn, mouseButton) -> this.mc.setScreen(parent));
+        this.addButton(back, (btn, mouseButton) -> this.mc.setScreenAndShow(parent));
     }
 
     private void addParamRow(Param param, int labelX, int y, int labelW, int controlX, int controlW) {
@@ -196,7 +196,7 @@ public class ParamInputScreen extends GuiBase {
         String commandLine = selectedUsage.buildCommand(values);
         CommandSender.send(commandLine);
         CommandHistory.recordRecent(command.id());
-        this.mc.setScreen(null);
+        this.mc.setScreenAndShow(null);
     }
 
     private String computePreview() {

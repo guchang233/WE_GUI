@@ -60,18 +60,18 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler {
 
     private static void openMainPanel(Minecraft mc) {
         if (mc.player == null || GuiUtils.getCurrentScreen() != null) return;
-        mc.setScreen(new WeCommandScreen());
+        mc.setScreenAndShow(new WeCommandScreen());
     }
 
     private static void openRadialMenu(Minecraft mc) {
         if (mc.player == null) return;
         // 已打开则关闭（R 键切换）
-        if (mc.screen instanceof RadialMenuScreen) {
-            mc.setScreen(null);
+        if (mc.gui.screen() instanceof RadialMenuScreen) {
+            mc.setScreenAndShow(null);
             return;
         }
         if (GuiUtils.getCurrentScreen() != null) return;
         WeCommands.init();
-        mc.setScreen(new RadialMenuScreen());
+        mc.setScreenAndShow(new RadialMenuScreen());
     }
 }

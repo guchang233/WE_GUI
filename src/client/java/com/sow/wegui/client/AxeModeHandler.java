@@ -71,7 +71,7 @@ public final class AxeModeHandler {
             if (level.isClientSide() && hand == InteractionHand.MAIN_HAND && isHoldingConfiguredWand(player)) {
                 lastModified = LastModifiedCorner.POS1;
                 if (Configs.Generic.SELECTION_MESSAGE_ENABLED.getBooleanValue()) {
-                    player.displayClientMessage(Component.translatable("wegui.message.pos1_set", formatPos(pos)).withStyle(ChatFormatting.DARK_PURPLE), false);
+                    player.sendSystemMessage(Component.translatable("wegui.message.pos1_set", formatPos(pos)).withStyle(ChatFormatting.DARK_PURPLE));
                 }
             }
             return InteractionResult.PASS;
@@ -90,7 +90,7 @@ public final class AxeModeHandler {
             lastModified = LastModifiedCorner.POS2;
             if (Configs.Generic.SELECTION_MESSAGE_ENABLED.getBooleanValue()) {
                 BlockPos target = hitResult.getBlockPos();
-                player.displayClientMessage(Component.translatable("wegui.message.pos2_set", formatPos(target)).withStyle(ChatFormatting.DARK_PURPLE), false);
+                player.sendSystemMessage(Component.translatable("wegui.message.pos2_set", formatPos(target)).withStyle(ChatFormatting.DARK_PURPLE));
             }
             return InteractionResult.PASS;
         });
@@ -148,7 +148,7 @@ public final class AxeModeHandler {
 
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
-        if (player == null || mc.screen != null) return false;
+        if (player == null || mc.gui.screen() != null) return false;
         if (!isHoldingConfiguredWand(player)) return false;
 
         boolean ctrl = isModifierHeld(GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_RIGHT_CONTROL);
@@ -168,25 +168,25 @@ public final class AxeModeHandler {
             return handleMovePastePreviewScroll(player, scrollDelta);
         }
 
-        player.displayClientMessage(Component.translatable("wegui.message.need_edit_or_move_mode").withStyle(ChatFormatting.RED), true);
+        player.sendOverlayMessage(Component.translatable("wegui.message.need_edit_or_move_mode").withStyle(ChatFormatting.RED));
         return true;
     }
 
     private static boolean handleEditSelectionScroll(LocalPlayer player, Minecraft mc, double scrollDelta) {
         WorldEditBridge.PartialCornerPositions corners = WorldEditBridge.getPartialSelectionCorners(mc);
         if (corners == null) {
-            player.displayClientMessage(Component.translatable("wegui.message.no_selection").withStyle(ChatFormatting.RED), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.no_selection").withStyle(ChatFormatting.RED));
             return true;
         }
 
         if (lastModified == LastModifiedCorner.NONE) {
-            player.displayClientMessage(Component.translatable("wegui.message.no_corner").withStyle(ChatFormatting.RED), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.no_corner").withStyle(ChatFormatting.RED));
             return true;
         }
 
         BlockPos target = lastModified == LastModifiedCorner.POS1 ? corners.pos1() : corners.pos2();
         if (target == null) {
-            player.displayClientMessage(Component.translatable("wegui.message.corner_not_set").withStyle(ChatFormatting.RED), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.corner_not_set").withStyle(ChatFormatting.RED));
             return true;
         }
 
@@ -200,10 +200,10 @@ public final class AxeModeHandler {
 
         if (lastModified == LastModifiedCorner.POS1) {
             CommandSender.send("//pos1 " + formatPos(moved));
-            player.displayClientMessage(Component.translatable("wegui.message.moved_pos1", formatPos(moved)).withStyle(ChatFormatting.GREEN), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.moved_pos1", formatPos(moved)).withStyle(ChatFormatting.GREEN));
         } else {
             CommandSender.send("//pos2 " + formatPos(moved));
-            player.displayClientMessage(Component.translatable("wegui.message.moved_pos2", formatPos(moved)).withStyle(ChatFormatting.GREEN), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.moved_pos2", formatPos(moved)).withStyle(ChatFormatting.GREEN));
         }
 
         return true;
@@ -211,7 +211,7 @@ public final class AxeModeHandler {
 
     private static boolean handleMovePastePreviewScroll(LocalPlayer player, double scrollDelta) {
         if (!hasClipboard() || !WorldEditBridge.canUseDirectPaste()) {
-            player.displayClientMessage(Component.translatable("wegui.message.no_clipboard_or_multiplayer").withStyle(ChatFormatting.RED), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.no_clipboard_or_multiplayer").withStyle(ChatFormatting.RED));
             resetPastePreviewOffset();
             return true;
         }
@@ -229,13 +229,13 @@ public final class AxeModeHandler {
             if (fixedOrigin != null) {
                 BlockPos moved = fixedOrigin.relative(direction, amount);
                 PastePreviewRenderer.setFixedOrigin(moved);
-                player.displayClientMessage(Component.translatable("wegui.message.moved_paste_preview",
-                        formatPos(moved)).withStyle(ChatFormatting.GREEN), true);
+                player.sendOverlayMessage(Component.translatable("wegui.message.moved_paste_preview",
+                        formatPos(moved)).withStyle(ChatFormatting.GREEN));
             }
         } else {
             pastePreviewOffset = pastePreviewOffset.relative(direction, amount);
-            player.displayClientMessage(Component.translatable("wegui.message.moved_paste_preview",
-                    formatPos(pastePreviewOffset)).withStyle(ChatFormatting.GREEN), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.moved_paste_preview",
+                    formatPos(pastePreviewOffset)).withStyle(ChatFormatting.GREEN));
         }
         return true;
     }
@@ -257,9 +257,9 @@ public final class AxeModeHandler {
             break;
         }
 
-        player.displayClientMessage(Component.translatable("wegui.message.mode_changed",
+        player.sendOverlayMessage(Component.translatable("wegui.message.mode_changed",
                 Component.literal("[" + (currentMode.ordinal() + 1) + "/" + count + "] "),
-                currentMode.getDisplayName()).withStyle(ChatFormatting.GREEN), true);
+                currentMode.getDisplayName()).withStyle(ChatFormatting.GREEN));
     }
 
     public static boolean isHoldingConfiguredWand(Player player) {
@@ -343,7 +343,7 @@ public final class AxeModeHandler {
             // 前置检查：单人世界才能直接 paste
             if (!WorldEditBridge.canUseDirectPaste()) {
                 WeGuiMod.LOGGER.warn("[WE GUI] 固定模式 paste 失败：非单人世界");
-                player.displayClientMessage(Component.translatable("wegui.message.fixed_mode_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
+                player.sendOverlayMessage(Component.translatable("wegui.message.fixed_mode_multiplayer_disabled").withStyle(ChatFormatting.RED));
                 Configs.PastePreview.PASTE_PLACEMENT_MODE.setOptionListValue(PastePlacementMode.FOLLOW_PLAYER);
                 return;
             }
@@ -361,9 +361,9 @@ public final class AxeModeHandler {
             if (success) {
                 // 失效缓存，确保下一帧重新读取世界方块进行 mismatch 计算
                 PastePreviewRenderer.invalidateCache();
-                player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(fixedOrigin)).withStyle(ChatFormatting.GREEN), true);
+                player.sendOverlayMessage(Component.translatable("wegui.message.paste_success", formatPos(fixedOrigin)).withStyle(ChatFormatting.GREEN));
             } else {
-                player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
+                player.sendOverlayMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED));
             }
             return;
         }
@@ -380,7 +380,7 @@ public final class AxeModeHandler {
 
         if (!WorldEditBridge.canUseDirectPaste()) {
             WeGuiMod.LOGGER.info("[WE GUI] 无法直接粘贴，提示多人服务器");
-            player.displayClientMessage(Component.translatable("wegui.message.move_paste_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.move_paste_multiplayer_disabled").withStyle(ChatFormatting.RED));
             return;
         }
 
@@ -390,9 +390,9 @@ public final class AxeModeHandler {
         if (success) {
             // 失效缓存，确保下一帧重新读取世界方块进行 mismatch 计算
             PastePreviewRenderer.invalidateCache();
-            player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(origin)).withStyle(ChatFormatting.GREEN), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.paste_success", formatPos(origin)).withStyle(ChatFormatting.GREEN));
         } else {
-            player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
+            player.sendOverlayMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED));
         }
     }
 

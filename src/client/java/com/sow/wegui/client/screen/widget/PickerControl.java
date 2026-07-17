@@ -48,7 +48,7 @@ public class PickerControl implements IParamControl {
         int bx = x + fieldW + GAP;
         if (isPatternOrMask) {
             ButtonGeneric pick = new ButtonGeneric(bx, y, BTN_WIDTH, 18, StringUtils.translate("wegui.picker.button"));
-            screen.addButton(pick, (btn, mouseButton) -> screen.mc.setScreen(new InventoryPickerScreen(screen, id -> {
+            screen.addButton(pick, (btn, mouseButton) -> screen.mc.setScreenAndShow(new InventoryPickerScreen(screen, id -> {
                 wrapper.textField().setValue(id);
                 wrapper.textField().setCursorPosition(id.length());
             })));
@@ -59,7 +59,7 @@ public class PickerControl implements IParamControl {
             String suggestLabel = isPatternOrMask ? "常" : "▽";
             ButtonGeneric suggest = new ButtonGeneric(bx, y, BTN_WIDTH, 18, suggestLabel);
             List<Option> pickerOptions = isPatternOrMask ? options : this.options;
-            screen.addButton(suggest, (btn, mouseButton) -> screen.mc.setScreen(new OptionPickerScreen(
+            screen.addButton(suggest, (btn, mouseButton) -> screen.mc.setScreenAndShow(new OptionPickerScreen(
                     screen, param.name(), pickerOptions, StringUtils.translate("wegui.picker.search"), opt -> {
                 wrapper.textField().setValue(opt.value());
                 wrapper.textField().setCursorPosition(opt.value().length());

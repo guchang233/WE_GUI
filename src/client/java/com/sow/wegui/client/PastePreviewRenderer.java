@@ -2,9 +2,13 @@ package com.sow.wegui.client;
 
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.blaze3d.pipeline.BindGroupLayout;
 import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.ColorTargetState;
+import com.mojang.blaze3d.pipeline.DepthStencilState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.shaders.UniformType;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -16,8 +20,10 @@ import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.IndexType;
+import com.mojang.blaze3d.PrimitiveTopology;
 import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.session.ClipboardHolder;
@@ -31,25 +37,23 @@ import fi.dy.masa.malilib.render.MaLiLibPipelines;
 import fi.dy.masa.malilib.render.RenderContext;
 import fi.dy.masa.malilib.render.RenderUtils;
 import fi.dy.masa.malilib.util.data.Color4f;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.network.chat.Component;
-import net.minecraft.client.renderer.ItemBlockRenderTypes;
-import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderBuffers;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
-import net.minecraft.client.renderer.block.model.BakedQuad;
-import net.minecraft.client.renderer.block.model.BlockModelPart;
-import net.minecraft.client.renderer.block.model.BlockStateModel;
+import net.minecraft.client.renderer.block.BlockStateModelSet;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
 import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.client.renderer.rendertype.OutputTarget;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
@@ -66,17 +70,18 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.joml.Matrix4fStack;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
+import org.joml.Vector4fc;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalDouble;
-import java.util.OptionalInt;
 
 /**
  * paste 位置预览渲染器，全面对齐 Litematica 26.2 的渲染架构与视觉风格。
@@ -108,8 +113,8 @@ import java.util.OptionalInt;
  *
  * <p>注册方式：
  * <ul>
- *   <li>层 ③ 在 {@code WorldRenderEvents.BEFORE_TRANSLUCENT} 中渲染（translucent buffer 时序需要）</li>
- *   <li>层 ①②④⑤ 通过 {@code IRenderer.onRenderWorldLastAdvanced} 渲染</li>
+ *   <li>层 ③ 在 {@code LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN} 中渲染（translucent buffer 时序需要）</li>
+ *   <li>层 ①②④⑤ 通过 {@code IRenderer.onRenderWorldLast} 渲染</li>
  * </ul>
  */
 public final class PastePreviewRenderer implements IRenderer {
@@ -146,6 +151,13 @@ public final class PastePreviewRenderer implements IRenderer {
     /** Block outline expand 值（Litematica OverlayRenderer.expand = 0.001f） */
     private static final float OUTLINE_EXPAND = 0.002f;
 
+    /** 26.2: LightTexture 被移除，内联原始位打包公式 (blockLight << 4) | (skyLight << 20) */
+    private static int packLight(int blockLight, int skyLight) {
+        return (blockLight << 4) | (skyLight << 20);
+    }
+    /** 26.2: LightTexture.FULL_BRIGHT = 0xF000F0 = packLight(15, 15) */
+    private static final int FULL_BRIGHT = 0xF000F0;
+
     // ---- 自定义 ghost block 渲染管线 ----
     // 基于 RenderPipelines.TRANSLUCENT_MOVING_BLOCK，关键调整：
     // 1. 禁用背面剔除（cull=false）：确保半透明 ghost block 的所有面都被渲染
@@ -156,23 +168,25 @@ public final class PastePreviewRenderer implements IRenderer {
     //    - 注意：不能用 withDepthBias(-1.0f, -10.0f)（原版 CRUMBLING/TEXT 用的值），
     //      那会让 offset 达到 -1，把所有 ghost block 深度推到 near plane，导致相互之间无法区分深度（透视）
     //    Litematica 原版用独立 schematic world 隔离深度，WeGui 用极小深度偏移近似。
-    private static final RenderPipeline.Snippet MATRICES_PROJECTION_SNIPPET =
-            RenderPipeline.builder()
-                    .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
-                    .withUniform("Projection", UniformType.UNIFORM_BUFFER)
-                    .buildSnippet();
+    //    26.2: RenderPipeline 采用 bind-group 架构，uniform/sampler 移至 BindGroupLayout，
+    //    blend 通过 ColorTargetState，depthWrite + depthBias 通过 DepthStencilState。
+    private static final BindGroupLayout GHOST_BLOCK_GROUP_LAYOUT = BindGroupLayout.builder()
+            .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+            .withUniform("Projection", UniformType.UNIFORM_BUFFER)
+            .withSampler("Sampler0")
+            .withSampler("Sampler2")
+            .build();
 
-    private static final RenderPipeline GHOST_BLOCK_PIPELINE = RenderPipeline.builder(MATRICES_PROJECTION_SNIPPET)
+    private static final RenderPipeline GHOST_BLOCK_PIPELINE = RenderPipeline.builder()
             .withLocation("wegui/pipeline/ghost_block")
             .withVertexShader("core/rendertype_translucent_moving_block")
             .withFragmentShader("core/rendertype_translucent_moving_block")
-            .withSampler("Sampler0")
-            .withSampler("Sampler2")
-            .withBlend(BlendFunction.TRANSLUCENT)
-            .withVertexFormat(DefaultVertexFormat.BLOCK, VertexFormat.Mode.QUADS)
+            .withBindGroupLayout(GHOST_BLOCK_GROUP_LAYOUT)
+            .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
+            .withVertexBinding(0, DefaultVertexFormat.BLOCK)
+            .withPrimitiveTopology(PrimitiveTopology.QUADS)
             .withCull(false)
-            .withDepthWrite(true)
-            .withDepthBias(0.0f, -1.0f)
+            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 0.0f, -1.0f))
             .build();
 
     private static final RenderType GHOST_BLOCK_TYPE = RenderTypeAccessor.wegui$create(
@@ -182,7 +196,6 @@ public final class PastePreviewRenderer implements IRenderer {
                     .withTexture("Sampler0", TextureAtlas.LOCATION_BLOCKS)
                     .setOutputTarget(OutputTarget.MAIN_TARGET)
                     .sortOnUpload()
-                    .bufferSize(786432)
                     .createRenderSetup());
 
     // ---- clipboard 缓存 ----
@@ -248,11 +261,12 @@ public final class PastePreviewRenderer implements IRenderer {
 
     /**
      * 注册渲染器：
-     * - ghost blocks（层③）注册到 BEFORE_TRANSLUCENT（translucent buffer 时序需要）
+     * - ghost blocks（层③）注册到 BEFORE_TRANSLUCENT_TERRAIN（translucent buffer 时序需要）
      * - overlays（层①②④⑤）通过返回 getInstance() 由调用方注册到 malilib RenderEventHandler
+     * 26.2: WorldRenderEvents → LevelRenderEvents（包路径从 world 改为 level）
      */
     public static void register() {
-        WorldRenderEvents.BEFORE_TRANSLUCENT.register(PastePreviewRenderer::renderGhostBlocksHook);
+        LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(PastePreviewRenderer::renderGhostBlocksHook);
     }
 
     /** 旧 API 兼容：现在每帧直接读取剪贴板，无需手动刷新 */
@@ -287,9 +301,9 @@ public final class PastePreviewRenderer implements IRenderer {
         if (newMode == PastePlacementMode.FIXED) {
             // 前置检查：单人世界才能直接 paste
             if (!WorldEditBridge.canUseDirectPaste()) {
-                mc.player.displayClientMessage(
+                mc.player.sendOverlayMessage(
                         Component.translatable("wegui.message.fixed_mode_multiplayer_disabled")
-                                .withStyle(ChatFormatting.RED), true);
+                                .withStyle(ChatFormatting.RED));
                 Configs.PastePreview.PASTE_PLACEMENT_MODE.setOptionListValue(PastePlacementMode.FOLLOW_PLAYER);
                 return;
             }
@@ -298,9 +312,9 @@ public final class PastePreviewRenderer implements IRenderer {
             BlockPos currentOrigin = AxeModeHandler.getPasteOrigin(mc.player);
             Map<BlockPos, BlockState> blocks = getClipboardBlocksCached(mc, currentOrigin);
             if (blocks == null || blocks.isEmpty()) {
-                mc.player.displayClientMessage(
+                mc.player.sendOverlayMessage(
                         Component.translatable("wegui.message.fixed_mode_no_clipboard")
-                                .withStyle(ChatFormatting.RED), true);
+                                .withStyle(ChatFormatting.RED));
                 Configs.PastePreview.PASTE_PLACEMENT_MODE.setOptionListValue(PastePlacementMode.FOLLOW_PLAYER);
                 return;
             }
@@ -308,9 +322,9 @@ public final class PastePreviewRenderer implements IRenderer {
             // 只固定渲染位置，不自动 paste（避免异步 paste 失败时用户无法感知）
             // 用户通过 //paste 在固定位置执行真正的 paste，渲染与 paste 同步
             fixedOrigin = currentOrigin;
-            mc.player.displayClientMessage(
+            mc.player.sendOverlayMessage(
                     Component.translatable("wegui.message.fixed_mode_enabled")
-                            .withStyle(ChatFormatting.GREEN), true);
+                            .withStyle(ChatFormatting.GREEN));
         } else {
             // 切换回 FOLLOW_PLAYER：清除固定位置
             fixedOrigin = null;
@@ -366,8 +380,8 @@ public final class PastePreviewRenderer implements IRenderer {
                 Configs.RenderStyles.SELECTION_POS2_COLOR.setValueFromString("#1010FFFF");
                 // 粘贴外框对齐 Litematica colorArea（白色）
                 Configs.RenderStyles.PASTE_BOX_COLOR.setValueFromString("#FFFFFFFF");
-                // 关键：RENDER_BLOCKS_AS_TRANSLUCENT=true，让 ghost block 通过 AlphaMultiBufferSource 渲染到
-                // GHOST_BLOCK_TYPE（基于 TRANSLUCENT_MOVING_BLOCK，不写深度），这样 ghost block 不会被世界
+                // 关键：RENDER_BLOCKS_AS_TRANSLUCENT=true，让 ghost block 通过自定义 GHOST_BLOCK_PIPELINE 渲染
+                // （基于 TRANSLUCENT_MOVING_BLOCK，cull=false + 极小深度偏移），这样 ghost block 不会被世界
                 // 方块遮挡，纹理始终可见。GHOST_BLOCK_ALPHA=1.0 保持视觉上接近实心。
                 // Litematica 原版用独立 schematic world 隔离深度，WeGui 无此架构，用半透明不写深度等效复现。
                 Configs.RenderStyles.RENDER_BLOCKS_AS_TRANSLUCENT.setBooleanValue(true);
@@ -421,7 +435,7 @@ public final class PastePreviewRenderer implements IRenderer {
     // 层 ③：ghost blocks（BEFORE_TRANSLUCENT）
     // ========================================================================
 
-    private static void renderGhostBlocksHook(WorldRenderContext context) {
+    private static void renderGhostBlocksHook(LevelRenderContext context) {
         try {
             INSTANCE.renderGhostBlocks(context);
         } catch (Throwable e) {
@@ -429,7 +443,7 @@ public final class PastePreviewRenderer implements IRenderer {
         }
     }
 
-    private void renderGhostBlocks(WorldRenderContext context) {
+    private void renderGhostBlocks(LevelRenderContext context) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
         if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) return;
@@ -465,7 +479,7 @@ public final class PastePreviewRenderer implements IRenderer {
         int lightLevel = fakeLighting ? Configs.RenderStyles.RENDER_FAKE_LIGHTING_LEVEL.getIntegerValue() : 15;
         int blockLight = fakeLighting ? lightLevel : 15;
         int skyLight = fakeLighting ? lightLevel : 15;
-        int packedLight = LightTexture.pack(blockLight, skyLight);
+        int packedLight = packLight(blockLight, skyLight);
 
         // 验证模式：方块种类错误（WRONG_BLOCK）或状态错误（WRONG_STATE）时，隐藏 ghost block 贴图。
         boolean verificationEnabled = Configs.Generic.BLOCK_VERIFICATION_ENABLED.getBooleanValue();
@@ -495,7 +509,7 @@ public final class PastePreviewRenderer implements IRenderer {
         // 只需 pushMatrix + translate(origin - cam)，让顶点 relPos 变换到相机空间：
         //   最终顶点位置 = R × (relPos + origin - cam) = R × (worldPos - cam)。
         // 对齐 Litematica WorldRendererSchematic.renderBlockOverlays 的 pushMatrix + translate(chunkOrigin - cam) 方案。
-        Camera camera = context.gameRenderer().getMainCamera();
+        Camera camera = context.gameRenderer().mainCamera();
         Vec3 cam = camera.position();
         Matrix4fStack stack = RenderSystem.getModelViewStack();
         stack.pushMatrix();
@@ -539,7 +553,7 @@ public final class PastePreviewRenderer implements IRenderer {
         ghostIndexCount = 0;
 
         ByteBufferBuilder alloc = new ByteBufferBuilder(2 * 1024 * 1024);
-        BufferBuilder builder = new BufferBuilder(alloc, VertexFormat.Mode.QUADS, DefaultVertexFormat.BLOCK);
+        BufferBuilder builder = new BufferBuilder(alloc, PrimitiveTopology.QUADS, DefaultVertexFormat.BLOCK);
         // 顶点用 relPos（不依赖 origin），缓存可跨 origin 变化复用
         PoseStack pose = new PoseStack();
         PoseStack.Pose poseEntry = pose.last();
@@ -559,11 +573,23 @@ public final class PastePreviewRenderer implements IRenderer {
                         }
                     }
                     poseMatrix.setTranslation(cached.relPos.getX(), cached.relPos.getY(), cached.relPos.getZ());
+                    // 26.2: putBulkData 被移除，改用 putBakedQuad + QuadInstance。
+                    // BakedQuad 现在是 record（仅含 position/UV/direction/materialInfo），颜色由 QuadInstance 提供。
+                    // tint 颜色通过 materialInfo().isTinted() 判断。
+                    QuadInstance quadInstance = new QuadInstance();
+                    quadInstance.setLightCoords(packedLight);
+                    quadInstance.setOverlayCoords(OverlayTexture.NO_OVERLAY);
                     for (BakedQuad quad : cached.allQuads) {
-                        float r2 = quad.isTinted() ? cached.r : 1.0f;
-                        float g2 = quad.isTinted() ? cached.g : 1.0f;
-                        float b2 = quad.isTinted() ? cached.b : 1.0f;
-                        builder.putBulkData(poseEntry, quad, r2, g2, b2, alpha, packedLight, OverlayTexture.NO_OVERLAY);
+                        boolean tinted = quad.materialInfo().isTinted();
+                        float r2 = tinted ? cached.r : 1.0f;
+                        float g2 = tinted ? cached.g : 1.0f;
+                        float b2 = tinted ? cached.b : 1.0f;
+                        int rI = Math.round(r2 * 255);
+                        int gI = Math.round(g2 * 255);
+                        int bI = Math.round(b2 * 255);
+                        int aI = Math.round(alpha * 255);
+                        quadInstance.setColor((aI << 24) | (rI << 16) | (gI << 8) | bI);
+                        builder.putBakedQuad(poseEntry, quad, quadInstance);
                         anyVertex = true;
                     }
                 } catch (Throwable e) {
@@ -618,7 +644,7 @@ public final class PastePreviewRenderer implements IRenderer {
      * <p>纹理解析对齐 RenderSetup.getTextures()：
      * <ul>
      *   <li>Sampler0（block atlas）：mc.getTextureManager().getTexture(LOCATION_BLOCKS).getTextureView() + .getSampler()</li>
-     *   <li>Sampler2（lightmap）：mc.gameRenderer.lightTexture().getTextureView() + getClampToEdge(LINEAR)</li>
+     *   <li>Sampler2（lightmap）：mc.gameRenderer.lightmap() + getClampToEdge(LINEAR)</li>
      * </ul>
      */
     private void drawGhostBlocksFromGpu() {
@@ -629,7 +655,7 @@ public final class PastePreviewRenderer implements IRenderer {
         // 1. 写 DynamicTransforms uniform（color=白色，offset=零，textureMatrix=identity）
         // GHOST_BLOCK_TYPE 没设 textureTransform，默认 TextureTransform.DEFAULT_TEXTURING 是 identity
         GpuBufferSlice gpuBufferSlice = RenderSystem.getDynamicUniforms().writeTransform(
-                RenderSystem.getModelViewMatrix(),
+                RenderSystem.getModelViewMatrixCopy(),
                 new Vector4f(1.0f, 1.0f, 1.0f, 1.0f),
                 new Vector3f(),
                 new Matrix4f()  // identity textureMatrix
@@ -639,57 +665,61 @@ public final class PastePreviewRenderer implements IRenderer {
         AbstractTexture blockAtlas = mc.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS);
         GpuTextureView atlasView = blockAtlas.getTextureView();
         GpuSampler atlasSampler = blockAtlas.getSampler();
-        GpuTextureView lightmapView = mc.gameRenderer.lightTexture().getTextureView();
+        GpuTextureView lightmapView = mc.gameRenderer.lightmap();
         GpuSampler lightmapSampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
 
-        // 3. 获取 RenderTarget（OutputTarget.MAIN_TARGET 等同于 mc.getMainRenderTarget()）
-        RenderTarget renderTarget = mc.getMainRenderTarget();
+        // 3. 获取 RenderTarget（26.2: mc.getMainRenderTarget() 移至 mc.gameRenderer.mainRenderTarget()）
+        RenderTarget renderTarget = mc.gameRenderer.mainRenderTarget();
         GpuTextureView colorView = renderTarget.getColorTextureView();
         GpuTextureView depthView = renderTarget.useDepth ? renderTarget.getDepthTextureView() : null;
 
         // 4. 获取 index buffer（QUADS 模式 BufferBuilder 不产生 indexBuffer，用 AutoStorageIndexBuffer）
+        // 26.2: getSequentialBuffer 参数从 VertexFormat.Mode 改为 PrimitiveTopology；
+        //       IndexType 从 VertexFormat.IndexType 改为 com.mojang.blaze3d.IndexType
         RenderSystem.AutoStorageIndexBuffer autoStorageIndexBuffer =
-                RenderSystem.getSequentialBuffer(VertexFormat.Mode.QUADS);
+                RenderSystem.getSequentialBuffer(PrimitiveTopology.QUADS);
         GpuBuffer indexBuffer = autoStorageIndexBuffer.getBuffer(ghostIndexCount);
-        VertexFormat.IndexType indexType = autoStorageIndexBuffer.type();
+        IndexType indexType = autoStorageIndexBuffer.type();
 
         // 5. 创建 RenderPass 并绘制
+        // 26.2: setVertexBuffer 参数从 GpuBuffer 改为 GpuBufferSlice；
+        //       drawIndexed 从 4 参数改为 5 参数（新增 instance count）
         try (RenderPass renderPass = RenderSystem.getDevice()
                 .createCommandEncoder()
                 .createRenderPass(
                         () -> "wegui:ghost_block_immediate",
-                        colorView, OptionalInt.empty(),
+                        colorView, Optional.<Vector4fc>empty(),
                         depthView, OptionalDouble.empty())) {
             renderPass.setPipeline(GHOST_BLOCK_PIPELINE);
             RenderSystem.bindDefaultUniforms(renderPass);
             renderPass.setUniform("DynamicTransforms", gpuBufferSlice);
-            renderPass.setVertexBuffer(0, ghostVertexGpuBuffer);
+            // GpuBuffer 包装为 GpuBufferSlice（26.2 setVertexBuffer 需要 GpuBufferSlice）
+            renderPass.setVertexBuffer(0, new GpuBufferSlice(ghostVertexGpuBuffer, 0L, ghostVertexGpuBuffer.size()));
             renderPass.bindTexture("Sampler0", atlasView, atlasSampler);
             renderPass.bindTexture("Sampler2", lightmapView, lightmapSampler);
             renderPass.setIndexBuffer(indexBuffer, indexType);
-            renderPass.drawIndexed(0, 0, ghostIndexCount, 1);
+            renderPass.drawIndexed(0, 0, ghostIndexCount, 0, 1);
         } catch (Throwable e) {
             WeGuiMod.LOGGER.debug("WeGui ghost blocks GpuBuffer draw 出错: {}", e.toString());
         }
     }
 
     // ========================================================================
-    // 层 ①②④⑤：overlays（IRenderer.onRenderWorldLastAdvanced）
+    // 层 ①②④⑤：overlays（IRenderer.onRenderWorldLast）
     // ========================================================================
 
     @Override
-    public void onRenderWorldLastAdvanced(RenderTarget target, Matrix4f posMatrix, Matrix4f projMatrix,
-                                          Frustum frustum, Camera camera, RenderBuffers buffers,
-                                          ProfilerFiller profiler) {
+    public void onRenderWorldLast(RenderTarget target, Matrix4fc matrix, CameraRenderState cameraState,
+                                  Frustum frustum, RenderBuffers buffers, GpuBufferSlice slice,
+                                  Vector4f fogColor, ProfilerFiller profiler) {
         try {
-            renderOverlays(target, posMatrix, projMatrix, frustum, camera, buffers, profiler);
+            renderOverlays(target, frustum, cameraState, profiler);
         } catch (Throwable e) {
             WeGuiMod.LOGGER.debug("WeGui overlay 渲染出错: {}", e.toString());
         }
     }
 
-    private void renderOverlays(RenderTarget target, Matrix4f posMatrix, Matrix4f projMatrix,
-                                Frustum frustum, Camera camera, RenderBuffers buffers,
+    private void renderOverlays(RenderTarget target, Frustum frustum, CameraRenderState cameraState,
                                 ProfilerFiller profiler) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
@@ -727,7 +757,7 @@ public final class PastePreviewRenderer implements IRenderer {
                 // 层 ④：Mismatch 渲染（始终穿墙，仅验证模式，复刻 Litematica renderSchematicMismatches）
                 if (verificationEnabled) {
                     profiler.push("mismatch");
-                    renderSchematicMismatches(frustum, camera, origin, mc.level);
+                    renderSchematicMismatches(frustum, cameraState.pos, origin, mc.level);
                     profiler.pop();
                 }
 
@@ -735,7 +765,7 @@ public final class PastePreviewRenderer implements IRenderer {
                 // 始终按验证状态着色（CORRECT 跳过，WRONG_BLOCK/WRONG_STATE/MISSING/EXTRA 各自颜色）
                 if (overlayEnabled) {
                     profiler.push("schematic_overlay");
-                    renderSchematicOverlay(frustum, camera, origin, mc.level);
+                    renderSchematicOverlay(frustum, cameraState.pos, origin, mc.level);
                     profiler.pop();
                 }
             }
@@ -765,8 +795,8 @@ public final class PastePreviewRenderer implements IRenderer {
                 if (Configs.RenderStyles.RENDER_AREA_SELECTION_BOX_SIDES.getBooleanValue()) {
                     var sideC = Configs.RenderStyles.AREA_SELECTION_BOX_SIDE_COLOR.getColor();
                     Color4f sideColor = new Color4f(sideC.r, sideC.g, sideC.b, sideC.a);
-                    Matrix4f matrix = RenderSystem.getModelViewStack();
-                    RenderUtils.renderAreaSides(pos1, pos2, sideColor, matrix);
+                    // 26.2: renderAreaSides 移除了 Matrix4f 参数（内部处理矩阵变换）
+                    RenderUtils.renderAreaSides(pos1, pos2, sideColor);
                 }
             }
         } catch (Throwable e) {
@@ -825,8 +855,8 @@ public final class PastePreviewRenderer implements IRenderer {
         float sideAlpha = (float) Configs.RenderStyles.PASTE_BOX_SIDE_ALPHA.getDoubleValue();
         if (Configs.RenderStyles.RENDER_PASTE_BOX_SIDES.getBooleanValue() && sideAlpha > 0.0f) {
             Color4f sideColor = new Color4f(c.r, c.g, c.b, sideAlpha);
-            Matrix4f matrix = RenderSystem.getModelViewStack();
-            RenderUtils.renderAreaSides(pos1, pos2, sideColor, matrix);
+            // 26.2: renderAreaSides 移除了 Matrix4f 参数（内部处理矩阵变换）
+            RenderUtils.renderAreaSides(pos1, pos2, sideColor);
         }
     }
 
@@ -1048,7 +1078,7 @@ public final class PastePreviewRenderer implements IRenderer {
      * 层2: 注视方块加粗 (outlines) — 仅注视的 mismatch 方块，lineWidth=6.0f<br>
      * 层3: 半透明填充面 (side_quads) — 所有 mismatch 方块，alpha=VERIFY_HILIGHT_ALPHA</p>
      */
-    private void renderSchematicMismatches(Frustum frustum, Camera camera, BlockPos origin, Level level) {
+    private void renderSchematicMismatches(Frustum frustum, Vec3 camPos, BlockPos origin, Level level) {
         if (chunkCache.isEmpty()) return;
         if (!Configs.RenderStyles.ENABLE_OVERLAY.getBooleanValue()) return;
         if (!Configs.Generic.BLOCK_VERIFICATION_ENABLED.getBooleanValue()) return;
@@ -1057,7 +1087,6 @@ public final class PastePreviewRenderer implements IRenderer {
         Minecraft mc = Minecraft.getInstance();
         int renderDistance = Configs.RenderStyles.GHOST_RENDER_DISTANCE.getIntegerValue();
         double renderDistSq = (double) renderDistance * renderDistance;
-        Vec3 camPos = camera.position();
 
         boolean enableCulling = Configs.RenderStyles.ENABLE_OVERLAY_CULLING.getBooleanValue();
         boolean reducedInnerSides = Configs.RenderStyles.OVERLAY_REDUCED_INNER_SIDES.getBooleanValue();
@@ -1135,10 +1164,12 @@ public final class PastePreviewRenderer implements IRenderer {
         if (enableOutlines) {
             try (RenderContext ctx = new RenderContext(
                     () -> "wegui:mismatch/batched_lines",
-                    linePipeline)) {
+                    linePipeline,
+                    262144)) {
                 BufferBuilder buffer = ctx.start(
                         () -> "wegui:mismatch/batched_lines",
-                        linePipeline);
+                        linePipeline,
+                        262144);
 
                 BlockPos prevPos = null;
                 for (int i = 0; i < mismatchPositions.size(); i++) {
@@ -1171,7 +1202,8 @@ public final class PastePreviewRenderer implements IRenderer {
                 if (lookedTarget != null && lookedStatus != null) {
                     BufferBuilder boldBuffer = ctx.start(
                             () -> "wegui:mismatch/outlines",
-                            linePipeline);
+                            linePipeline,
+                            262144);
                     Color4f lookedC = getVerifyColor(lookedStatus);
                     Color4f lookedBold = new Color4f(lookedC.r, lookedC.g, lookedC.b, 1.0f);
                     RenderUtils.drawBlockBoundingBoxOutlinesBatchedLinesSimple(lookedTarget, lookedBold, OUTLINE_EXPAND, LINE_WIDTH_MISMATCH_LOOKED, boldBuffer);
@@ -1193,10 +1225,12 @@ public final class PastePreviewRenderer implements IRenderer {
         if (renderSides) {
             try (RenderContext sideCtx = new RenderContext(
                     () -> "wegui:mismatch/side_quads",
-                    sidePipeline)) {
+                    sidePipeline,
+                    262144)) {
                 BufferBuilder sideBuffer = sideCtx.start(
                         () -> "wegui:mismatch/side_quads",
-                        sidePipeline);
+                        sidePipeline,
+                        262144);
                 for (int i = 0; i < mismatchPositions.size(); i++) {
                     BlockPos pos = mismatchPositions.get(i);
                     if (reducedInnerSides && !isBlockExposed(pos, level)) continue;
@@ -1234,14 +1268,13 @@ public final class PastePreviewRenderer implements IRenderer {
      * <p>层1: 边框线 (batched_lines) — 强制 alpha=1.0，OVERLAY_OUTLINE_WIDTH / OVERLAY_OUTLINE_WIDTH_THROUGH<br>
      * 层2: 填充面 (side_quads) — 使用颜色自带 alpha，受 OVERLAY_ENABLE_SIDES 控制</p>
      */
-    private void renderSchematicOverlay(Frustum frustum, Camera camera, BlockPos origin, Level level) {
+    private void renderSchematicOverlay(Frustum frustum, Vec3 camPos, BlockPos origin, Level level) {
         if (chunkCache.isEmpty()) return;
         if (!Configs.RenderStyles.ENABLE_OVERLAY.getBooleanValue()) return;
         if (mismatchPositionsCache == null || mismatchStatusesCache == null) return;
 
         int renderDistance = Configs.RenderStyles.GHOST_RENDER_DISTANCE.getIntegerValue();
         double renderDistSq = (double) renderDistance * renderDistance;
-        Vec3 camPos = camera.position();
 
         // 透墙模式：OVERLAY_RENDER_THROUGH 控制
         boolean renderThrough = Configs.RenderStyles.OVERLAY_RENDER_THROUGH.getBooleanValue();
@@ -1283,10 +1316,12 @@ public final class PastePreviewRenderer implements IRenderer {
         if (enableOutlines && !overlayPositions.isEmpty()) {
             try (RenderContext ctx = new RenderContext(
                     () -> "wegui:overlay/batched_lines",
-                    linePipeline)) {
+                    linePipeline,
+                    262144)) {
                 BufferBuilder buffer = ctx.start(
                         () -> "wegui:overlay/batched_lines",
-                        linePipeline);
+                        linePipeline,
+                        262144);
 
                 for (int i = 0; i < overlayPositions.size(); i++) {
                     BlockPos target = overlayPositions.get(i);
@@ -1314,10 +1349,12 @@ public final class PastePreviewRenderer implements IRenderer {
         if (enableSides && !overlayPositions.isEmpty()) {
             try (RenderContext sideCtx = new RenderContext(
                     () -> "wegui:overlay/side_quads",
-                    sidePipeline)) {
+                    sidePipeline,
+                    262144)) {
                 BufferBuilder sideBuffer = sideCtx.start(
                         () -> "wegui:overlay/side_quads",
-                        sidePipeline);
+                        sidePipeline,
+                        262144);
                 for (int i = 0; i < overlayPositions.size(); i++) {
                     BlockPos pos = overlayPositions.get(i);
                     if (reducedInnerSides && !isBlockExposed(pos, level)) continue;
@@ -1452,100 +1489,6 @@ public final class PastePreviewRenderer implements IRenderer {
     }
 
     // ========================================================================
-    // AlphaMultiBufferSource / AlphaVertexConsumer（ghost block 半透明）
-    // ========================================================================
-
-    /**
-     * 把任意请求都转到自定义 ghost block RenderType（cull=false），使后续 VertexConsumer 的 alpha 生效。
-     */
-    private static final class AlphaMultiBufferSource implements MultiBufferSource {
-        private final MultiBufferSource delegate;
-        private final float alpha;
-        private final Map<RenderType, VertexConsumer> buffers = new IdentityHashMap<>();
-
-        AlphaMultiBufferSource(MultiBufferSource delegate, float alpha) {
-            this.delegate = delegate;
-            this.alpha = alpha;
-        }
-
-        @Override
-        public VertexConsumer getBuffer(RenderType renderType) {
-            return buffers.computeIfAbsent(renderType, rt ->
-                    new AlphaVertexConsumer(delegate.getBuffer(GHOST_BLOCK_TYPE), alpha));
-        }
-    }
-
-    /**
-     * 在顶点颜色上应用半透明 alpha 倍率。
-     */
-    private static final class AlphaVertexConsumer implements VertexConsumer {
-        private final VertexConsumer delegate;
-        private final int alpha; // 0-255
-
-        AlphaVertexConsumer(VertexConsumer delegate, float alpha) {
-            this.delegate = delegate;
-            this.alpha = Math.round(alpha * 255f);
-        }
-
-        public VertexConsumer addVertex(float x, float y, float z) {
-            return delegate.addVertex(x, y, z);
-        }
-
-        public VertexConsumer setColor(int color) {
-            int a = (color >> 24) & 0xFF;
-            int r = (color >> 16) & 0xFF;
-            int g = (color >> 8) & 0xFF;
-            int b = color & 0xFF;
-            a = (a * alpha) / 255;
-            return delegate.setColor((a << 24) | (r << 16) | (g << 8) | b);
-        }
-
-        public VertexConsumer setColor(int r, int g, int b, int a) {
-            return delegate.setColor(r, g, b, (a * alpha) / 255);
-        }
-
-        public VertexConsumer setColor(float r, float g, float b, float a) {
-            return delegate.setColor(r, g, b, a * (alpha / 255f));
-        }
-
-        public VertexConsumer setUv(float u, float v) {
-            return delegate.setUv(u, v);
-        }
-
-        public VertexConsumer setUv1(int u, int v) {
-            return delegate.setUv1(u, v);
-        }
-
-        public VertexConsumer setUv2(int u, int v) {
-            return delegate.setUv2(u, v);
-        }
-
-        public VertexConsumer setNormal(float x, float y, float z) {
-            return delegate.setNormal(x, y, z);
-        }
-
-        public VertexConsumer setOverlay(int overlay) {
-            return delegate.setOverlay(overlay);
-        }
-
-        public VertexConsumer setLight(int light) {
-            return delegate.setLight(light);
-        }
-
-        public VertexConsumer setLineWidth(float width) {
-            return delegate.setLineWidth(width);
-        }
-
-        public void putBulkData(PoseStack.Pose pose, BakedQuad quad, float red, float green, float blue, float alpha, int light, int overlay) {
-            delegate.putBulkData(pose, quad, red, green, blue, alpha * (this.alpha / 255f), light, overlay);
-        }
-
-        public void putBulkData(PoseStack.Pose pose, BakedQuad quad, float[] brightness, float red, float green, float blue, float alpha, int[] lightmap, int overlay) {
-            delegate.putBulkData(pose, quad, brightness, red, green, blue, alpha * (this.alpha / 255f), lightmap, overlay);
-        }
-    }
-
-    // ========================================================================
     // ghost block BakedQuad 渲染缓存
     // ========================================================================
 
@@ -1558,15 +1501,13 @@ public final class PastePreviewRenderer implements IRenderer {
      */
     private static final class CachedGhostBlock {
         final BlockPos relPos;
-        final RenderType renderType;
         /** tint 颜色（getTintIndex >= 0 的 quad 用此颜色着色） */
         final float r, g, b;
         /** 所有方向（含 null 方向）的 BakedQuad 合并列表 */
         final List<BakedQuad> allQuads;
 
-        CachedGhostBlock(BlockPos relPos, RenderType renderType, float r, float g, float b, List<BakedQuad> allQuads) {
+        CachedGhostBlock(BlockPos relPos, float r, float g, float b, List<BakedQuad> allQuads) {
             this.relPos = relPos;
-            this.renderType = renderType;
             this.r = r;
             this.g = g;
             this.b = b;
@@ -1577,18 +1518,18 @@ public final class PastePreviewRenderer implements IRenderer {
     /**
      * 为所有 {@link ClipboardChunkCache.ChunkGroup} 填充 {@code renderCache}（若尚未填充）。
      *
-     * <p>对每个非空气方块预计算：
+     * <p>26.2: BlockRenderDispatcher 被移除，改用 {@link BlockStateModelSet}。
+     * 对每个非空气方块预计算：
      * <ul>
-     *   <li>{@link BakedModel#getQuads} 收集所有方向的 BakedQuad（固定 seed=42L，与 {@code renderSingleBlock} 一致）</li>
-     *   <li>{@link BlockColors#getColor} 计算 tint 颜色</li>
-     *   <li>{@link ItemBlockRenderTypes#getRenderType} 获取 RenderType</li>
+     *   <li>{@link BlockStateModel#collectParts} 收集所有方向的 BakedQuad（固定 seed=42L）</li>
+     *   <li>{@link BlockColors#getTintSource} + {@link BlockTintSource#color} 计算 tint 颜色</li>
      * </ul>
      * 缓存按 chunk section 组织，支持 section 级距离剔除。</p>
      */
     @SuppressWarnings("unchecked")
     private void ensureGhostBlockRenderCache() {
         Minecraft mc = Minecraft.getInstance();
-        BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
+        BlockStateModelSet modelSet = mc.getModelManager().getBlockStateModelSet();
         BlockColors blockColors = mc.getBlockColors();
         RandomSource random = RandomSource.create(42L);
         Direction[] directions = Direction.values();
@@ -1606,18 +1547,19 @@ public final class PastePreviewRenderer implements IRenderer {
                     // renderSingleBlock 只处理 RenderShape.MODEL，其他形状跳过
                     if (state.getRenderShape() != RenderShape.MODEL) continue;
 
-                    BlockStateModel model = dispatcher.getBlockModel(state);
-                    RenderType renderType = ItemBlockRenderTypes.getRenderType(state);
+                    BlockStateModel model = modelSet.get(state);
 
-                    int color = blockColors.getColor(state, null, null, 0);
+                    int color = blockColors.getTintSource(state, 0).color(state);
                     float r = (color >> 16 & 255) / 255f;
                     float g = (color >> 8 & 255) / 255f;
                     float b = (color & 255) / 255f;
 
-                    // 1.21.11 API: BlockStateModel.collectParts(RandomSource) → List<BlockModelPart>
-                    // BlockModelPart.getQuads(Direction) → List<BakedQuad>（1 参数，无 BlockState/RandomSource）
+                    // 26.2 API: BlockStateModel.collectParts(RandomSource, List<BlockStateModelPart>) — 2 参数 void
+                    // BlockStateModelPart.getQuads(Direction) → List<BakedQuad>
+                    List<BlockStateModelPart> parts = new ArrayList<>();
+                    model.collectParts(random, parts);
                     List<BakedQuad> allQuads = new ArrayList<>();
-                    for (BlockModelPart part : model.collectParts(random)) {
+                    for (BlockStateModelPart part : parts) {
                         for (Direction dir : directions) {
                             allQuads.addAll(part.getQuads(dir));
                         }
@@ -1625,7 +1567,7 @@ public final class PastePreviewRenderer implements IRenderer {
                     }
                     if (allQuads.isEmpty()) continue;
 
-                    cache.add(new CachedGhostBlock(positions.get(i), renderType, r, g, b, allQuads));
+                    cache.add(new CachedGhostBlock(positions.get(i), r, g, b, allQuads));
                 } catch (Throwable ignored) {
                     // 跳过无法获取模型的方块
                 }

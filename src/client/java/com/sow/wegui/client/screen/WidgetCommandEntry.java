@@ -125,9 +125,9 @@ public class WidgetCommandEntry extends WidgetListEntryBase<CommandRow> {
             if (command.usages().size() == 1 && usage.type() == Type.INSTANT) {
                 CommandSender.send(usage.baseCommand());
                 CommandHistory.recordRecent(command.id());
-                mc.setScreen(null);
+                mc.setScreenAndShow(null);
             } else {
-                mc.setScreen(new ParamInputScreen(parent, command, usage));
+                mc.setScreenAndShow(new ParamInputScreen(parent, command, usage));
             }
         }
     }

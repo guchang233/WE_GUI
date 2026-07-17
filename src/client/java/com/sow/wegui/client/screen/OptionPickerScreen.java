@@ -46,7 +46,7 @@ public class OptionPickerScreen extends GuiBase {
         super.initGui();
 
         ButtonGeneric back = new ButtonGeneric(MARGIN_X, 8, 60, 18, StringUtils.translate("wegui.command.back"));
-        this.addButton(back, (btn, mouseButton) -> this.mc.setScreen(parent));
+        this.addButton(back, (btn, mouseButton) -> this.mc.setScreenAndShow(parent));
 
         int fieldY = TOP - 34;
         int fieldW = this.width - MARGIN_X * 2;
@@ -82,7 +82,7 @@ public class OptionPickerScreen extends GuiBase {
 
         // Re-add static controls
         ButtonGeneric back = new ButtonGeneric(MARGIN_X, 8, 60, 18, StringUtils.translate("wegui.command.back"));
-        this.addButton(back, (btn, mouseButton) -> this.mc.setScreen(parent));
+        this.addButton(back, (btn, mouseButton) -> this.mc.setScreenAndShow(parent));
 
         int fieldY = TOP - 34;
         int fieldW = this.width - MARGIN_X * 2;
@@ -145,7 +145,7 @@ public class OptionPickerScreen extends GuiBase {
 
     private void onSelect(WeCommands.Option option) {
         onSelected.accept(option);
-        this.mc.setScreen(parent);
+        this.mc.setScreenAndShow(parent);
     }
 
     private record OptionButtonListener(OptionPickerScreen screen, WeCommands.Option option) implements IButtonActionListener {

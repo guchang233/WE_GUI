@@ -267,7 +267,7 @@ public class RadialMenuScreen extends GuiBase {
             }
         }
         if (event.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-            this.mc.setScreen(null);
+            this.mc.setScreenAndShow(null);
             return true;
         }
         return false;
@@ -292,7 +292,7 @@ public class RadialMenuScreen extends GuiBase {
     @Override
     public boolean keyPressed(KeyEvent event) {
         if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
-            this.mc.setScreen(null);
+            this.mc.setScreenAndShow(null);
             return true;
         }
         return super.keyPressed(event);
@@ -306,9 +306,9 @@ public class RadialMenuScreen extends GuiBase {
         if (cmd.usages().size() == 1 && usage.type() == WeCommands.Type.INSTANT) {
             CommandSender.send(usage.baseCommand());
             CommandHistory.recordRecent(cmd.id());
-            mc.setScreen(null);
+            mc.setScreenAndShow(null);
         } else {
-            mc.setScreen(new ParamInputScreen(null, cmd, usage));
+            mc.setScreenAndShow(new ParamInputScreen(null, cmd, usage));
         }
     }
 

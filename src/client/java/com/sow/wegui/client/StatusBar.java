@@ -4,11 +4,12 @@ import com.sow.wegui.WeStatus;
 import com.sow.wegui.config.Anchor;
 import com.sow.wegui.config.Configs;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 /**
  * 在 HUD 上实时显示 WorldEdit 选区状态。
@@ -41,16 +42,15 @@ public final class StatusBar {
                 cached = WorldEditBridge.capture(mc);
             }
         });
-        HudRenderCallback.EVENT.register((GuiGraphics drawContext, DeltaTracker tickCounter) -> {
-            Minecraft mc = Minecraft.getInstance();
-            render(drawContext, mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight());
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("wegui", "status_bar"), (GuiGraphicsExtractor g, DeltaTracker dt) -> {
+            render(g, g.guiWidth(), g.guiHeight());
         });
         ModeIndicator.register();
     }
 
-    private static void render(GuiGraphics g, int sw, int sh) {
+    private static void render(GuiGraphicsExtractor g, int sw, int sh) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.screen != null) return;
+        if (mc.player == null || mc.gui.screen() != null) return;
 
         if (!Configs.Generic.STATUS_BAR_ENABLED.getBooleanValue()) return;
 
@@ -94,9 +94,9 @@ public final class StatusBar {
         };
 
         g.fill(x, y, x + panelW, y + panelH, 0xAA000000);
-        g.drawString(mc.font, line1, x + 4, y + 3, 0xFFFFFFFF, false);
+        g.text(mc.font, line1, x + 4, y + 3, 0xFFFFFFFF, false);
         if (!line2.isBlank()) {
-            g.drawString(mc.font, line2, x + 4, y + 3 + h + 1, 0xFFAAAAAA, false);
+            g.text(mc.font, line2, x + 4, y + 3 + h + 1, 0xFFAAAAAA, false);
         }
 
     }
