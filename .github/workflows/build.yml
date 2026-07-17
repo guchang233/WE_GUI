@@ -91,7 +91,7 @@ jobs:
             1.21.11
           dependencies: |
             fabric-api(required){modrinth:P7dR8mSH}
-            malilib(required,>=0.27.0){modrinth:GcWjdA9I}
+            malilib@>=0.27.0(required){modrinth:GcWjdA9I}
             worldedit(optional){modrinth:1u6JkXh5}
           java: |
             21
