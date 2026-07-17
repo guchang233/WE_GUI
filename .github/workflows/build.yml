@@ -82,7 +82,7 @@ jobs:
           version-type: release
           # 用 GitHub release 自动生成的 changelog
           changelog: ${{ github.event.release.body }}
-          changelog-file: CHANGELOG.md
+          # changelog-file: CHANGELOG.md  # 不发布独立 changelog 文件
           loaders: fabric
           game-versions: |
             1.21.8
