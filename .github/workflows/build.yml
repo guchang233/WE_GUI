@@ -90,8 +90,9 @@ jobs:
             1.21.10
             1.21.11
           dependencies: |
-            fabric-api(required)
-            malilib(required,>=0.27.0)
+            fabric-api(required){modrinth:P7dR8mSH}
+            malilib(required,>=0.27.0){modrinth:GcWjdA9I}
+            worldedit(optional){modrinth:1u6JkXh5}
           java: |
             21
           fail-mode: warn
