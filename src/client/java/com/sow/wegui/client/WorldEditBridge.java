@@ -3,6 +3,9 @@ package com.sow.wegui.client;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.WorldEdit;
+import com.sk89q.worldedit.WorldEditException;
+import com.sk89q.worldedit.extent.AbstractDelegateExtent;
+import com.sk89q.worldedit.extent.Extent;
 import com.sk89q.worldedit.fabric.FabricAdapter;
 import com.sk89q.worldedit.function.operation.Operation;
 import com.sk89q.worldedit.function.operation.Operations;
@@ -17,10 +20,13 @@ import com.sk89q.worldedit.regions.RegionSelector;
 import com.sk89q.worldedit.regions.selector.CuboidRegionSelector;
 import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldedit.world.block.BaseBlock;
+import com.sk89q.worldedit.world.block.BlockStateHolder;
 import com.sk89q.worldedit.world.item.ItemType;
+import com.sk89q.worldedit.world.registry.BlockMaterial;
 import com.sk89q.worldedit.extent.transform.BlockTransformExtent;
 import com.sow.wegui.WeGuiMod;
 import com.sow.wegui.WeStatus;
+import com.sow.wegui.config.Configs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -389,11 +395,15 @@ public final class WorldEditBridge {
 
             WeGuiMod.LOGGER.info("[WE GUI] pasteClipboardAt: 调度到服务端线程, target=({}, {}, {})", tx, ty, tz);
             final ServerLevel finalLevel = level;
+            final boolean replaceAirOnly = Configs.PastePreview.PASTE_REPLACE_AIR_ONLY.getBooleanValue();
             server.execute(() -> {
                 try (EditSession editSession = WorldEdit.getInstance().getEditSessionFactory().getEditSession(finalWeWorld, -1)) {
-                    Operation operation = finalHolder.createPaste(editSession)
+                    // replaceAirOnly=true 时用 AirOnlyExtent 包装：只在目标位置当前为空气时放置剪贴板方块。
+                    // 同时 ignoreAirBlocks(true) 跳过剪贴板中的空气方块（无需把空气"放置"到空气上）。
+                    Extent targetExtent = replaceAirOnly ? new AirOnlyExtent(editSession) : editSession;
+                    Operation operation = finalHolder.createPaste(targetExtent)
                             .to(BlockVector3.at(tx, ty, tz))
-                            .ignoreAirBlocks(false)
+                            .ignoreAirBlocks(replaceAirOnly)
                             .build();
                     Operations.complete(operation);
                     finalSession.remember(editSession);
@@ -438,6 +448,27 @@ public final class WorldEditBridge {
         } catch (Throwable e) {
             WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: 调度异常 at {}: {}", target, e);
             return false;
+        }
+    }
+
+    /**
+     * 只允许在目标位置当前为空气时放置方块的 Extent 包装器。
+     * 用于 PASTE_REPLACE_AIR_ONLY 配置：避免粘贴覆盖已有建筑。
+     */
+    private static final class AirOnlyExtent extends AbstractDelegateExtent {
+        AirOnlyExtent(Extent extent) {
+            super(extent);
+        }
+
+        @Override
+        public <T extends BlockStateHolder<T>> boolean setBlock(BlockVector3 location, T block) throws WorldEditException {
+            com.sk89q.worldedit.world.block.BlockState existing = getBlock(location);
+            BlockMaterial mat = existing.getBlockType().getMaterial();
+            if (mat == null || !mat.isAir()) {
+                // 目标位置非空气，跳过（不替换已有方块）
+                return true;
+            }
+            return super.setBlock(location, block);
         }
     }
 }

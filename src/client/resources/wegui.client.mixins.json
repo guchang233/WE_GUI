@@ -6,6 +6,6 @@
   "client": [
     "MouseHandlerMixin",
     "ClientPacketListenerMixin",
-    "RenderTypeAccessor"
+    "ButtonBaseMixin"
   ]
 }

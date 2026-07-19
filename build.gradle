@@ -44,8 +44,12 @@ dependencies {
     // WorldEdit Fabric 运行时依赖（直接调用 WE API）
     modImplementation "com.sk89q.worldedit:worldedit-fabric-mc1.21.11:7.4.2"
 
-    // MaLiLib：提供 masa 风格的配置界面与配置系统
+    // MaLiLib：提供 masa 风格的配置界面与配置系统（1.21.11-0.27.x via Modrinth maven）
     modImplementation "maven.modrinth:GcWjdA9I:5Ywu5uMw"
+
+    // Litematica：渲染系统依赖（WorldSchematic + ChunkRenderDispatcher + OverlayRenderer + SchematicVerifier，1.21.11-0.25.x）
+    // Modrinth maven 未发布此版本 POM，使用本地 jar 引入
+    modImplementation files("libs/litematica-fabric-1.21.11-0.25.0.jar")
 
     // DevAuth Neo：开发环境下使用正版 Microsoft 账号登录（仅本地运行，不会打包进 jar）
     // 暂时禁用：Fabric Loader 0.18.4 的 classTweaker 命名空间检查与 DevAuth Neo 不兼容

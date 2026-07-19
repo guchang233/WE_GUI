@@ -1,5 +1,6 @@
 package com.sow.wegui.client;
 
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
@@ -16,21 +17,23 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.Map;
+
 /**
- * WE 绑定工具双模式控制：
- * - 正常模式：保持 WorldEdit 默认行为（左键 pos1，右键 pos2）。
- * - 编辑选区模式：按住 Alt 并滚动滚轮，可向玩家朝向方向挪动上一次修改的选点。
+ * WE 绑定工具多模式控制：
+ * - 正常模式：保持 WorldEdit 默认行为（左键 pos1，右键 pos2）
+ * - 编辑选区模式：Alt+滚轮 向玩家朝向挪动上一次修改的选点
+ * - 移动粘贴预览模式：Alt+滚轮 移动 Litematica 同步预览的原点
  *
- * 模式切换：手持配置的工具时按住 Ctrl 并滚动滚轮循环切换所有模式。
- * 手持配置的工具时只要按下了 Ctrl 或 Alt，滚轮事件都会被消费，避免触发物品栏切换。
+ * 模式切换：Ctrl+滚轮 循环切换；按下 Ctrl 或 Alt 时滚轮事件都会被消费避免触发物品栏切换。
+ *
+ * <p>1.21.11 适配：使用 {@code player.displayClientMessage(msg, true)} 替代 26.x 的
+ * {@code sendOverlayMessage}，使用 {@code mc.screen} 替代 {@code mc.gui.screen()}。</p>
  */
 public final class AxeModeHandler {
     private AxeModeHandler() {}
@@ -65,7 +68,21 @@ public final class AxeModeHandler {
     private static Item cachedWandItem;
     private static String cachedWandItemId;
 
+    @Nullable
+    private static BlockPos fixedOrigin = null;
+    private static PastePlacementMode lastMode = PastePlacementMode.FIXED;
+
     public static void register() {
+        // 监听 PASTE_PLACEMENT_MODE 变化，触发 handlePlacementModeChange
+        ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            if (mc.player == null) return;
+            PastePlacementMode currentModeCfg = (PastePlacementMode) Configs.PastePreview.PASTE_PLACEMENT_MODE.getOptionListValue();
+            if (currentModeCfg != lastMode) {
+                handlePlacementModeChange(currentModeCfg, mc);
+                lastMode = currentModeCfg;
+            }
+        });
+
         // 左键记录 pos1 为最后修改点，并根据开关显示提示
         AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
             if (level.isClientSide() && hand == InteractionHand.MAIN_HAND && isHoldingConfiguredWand(player)) {
@@ -133,10 +150,85 @@ public final class AxeModeHandler {
     }
 
     /**
+     * 获取当前生效的预览原点。
+     * - FIXED 模式：首次调用时自动把 fixedOrigin 固定到当前玩家位置，之后保持不变
+     * - FOLLOW_PLAYER 模式：返回玩家位置 + 手动偏移
+     */
+    public static BlockPos getEffectiveOrigin(Minecraft mc) {
+        if (lastMode == PastePlacementMode.FIXED) {
+            if (fixedOrigin == null && mc.player != null) {
+                fixedOrigin = getPasteOrigin(mc.player);
+            }
+            if (fixedOrigin != null) {
+                return fixedOrigin;
+            }
+        }
+        if (mc.player == null) return BlockPos.ZERO;
+        return getPasteOrigin(mc.player);
+    }
+
+    /**
      * 若存在非零粘贴偏移，则在预览原点执行 //paste；否则正常发送 //paste。
      */
     public static void executePasteAtPreview(LocalPlayer player) {
         pasteAtPreview(player);
+    }
+
+    // ---- 固定放置模式状态访问 ----
+
+    /** 当前是否处于固定模式（直接读配置，不依赖 lastMode） */
+    public static boolean isFixedMode() {
+        PastePlacementMode mode = (PastePlacementMode) Configs.PastePreview.PASTE_PLACEMENT_MODE.getOptionListValue();
+        return mode == PastePlacementMode.FIXED && fixedOrigin != null;
+    }
+
+    /** 获取固定位置（固定模式下），否则返回 null */
+    @Nullable
+    public static BlockPos getFixedOrigin() {
+        return isFixedMode() ? fixedOrigin : null;
+    }
+
+    /** 设置固定位置（用于 pasteAtPreview 在 fixedOrigin 未初始化时回填） */
+    public static void setFixedOrigin(BlockPos origin) {
+        fixedOrigin = origin;
+    }
+
+    /**
+     * 处理放置模式切换：
+     * - 切换到 FIXED：记录当前预览位置作为固定原点，用户通过 //paste 在此位置执行真正的 paste
+     * - 切换到 FOLLOW_PLAYER：清除固定位置，预览恢复跟随玩家
+     */
+    private static void handlePlacementModeChange(PastePlacementMode newMode, Minecraft mc) {
+        if (mc.player == null) return;
+
+        if (newMode == PastePlacementMode.FIXED) {
+            // 仅单人世界
+            if (!WorldEditBridge.canUseDirectPaste()) {
+                mc.player.displayClientMessage(
+                        Component.translatable("wegui.message.fixed_mode_multiplayer_disabled")
+                                .withStyle(ChatFormatting.RED), true);
+                Configs.PastePreview.PASTE_PLACEMENT_MODE.setOptionListValue(PastePlacementMode.FOLLOW_PLAYER);
+                return;
+            }
+
+            // 需有剪贴板
+            BlockPos currentOrigin = getPasteOrigin(mc.player);
+            Map<BlockPos, BlockState> blocks = WorldEditBridge.getClipboardBlocks(mc);
+            if (blocks == null || blocks.isEmpty()) {
+                mc.player.displayClientMessage(
+                        Component.translatable("wegui.message.fixed_mode_no_clipboard")
+                                .withStyle(ChatFormatting.RED), true);
+                Configs.PastePreview.PASTE_PLACEMENT_MODE.setOptionListValue(PastePlacementMode.FOLLOW_PLAYER);
+                return;
+            }
+
+            fixedOrigin = currentOrigin;
+            mc.player.displayClientMessage(
+                    Component.translatable("wegui.message.fixed_mode_enabled")
+                            .withStyle(ChatFormatting.GREEN), true);
+        } else {
+            fixedOrigin = null;
+        }
     }
 
     /**
@@ -224,11 +316,11 @@ public final class AxeModeHandler {
 
         // 固定模式下移动 fixedOrigin（不随玩家移动，但可手动移动）
         // 随玩家移动模式下移动 pastePreviewOffset
-        if (PastePreviewRenderer.isFixedMode()) {
-            BlockPos fixedOrigin = PastePreviewRenderer.getFixedOrigin();
-            if (fixedOrigin != null) {
-                BlockPos moved = fixedOrigin.relative(direction, amount);
-                PastePreviewRenderer.setFixedOrigin(moved);
+        if (isFixedMode()) {
+            BlockPos fixedOriginPos = getFixedOrigin();
+            if (fixedOriginPos != null) {
+                BlockPos moved = fixedOriginPos.relative(direction, amount);
+                setFixedOrigin(moved);
                 player.displayClientMessage(Component.translatable("wegui.message.moved_paste_preview",
                         formatPos(moved)).withStyle(ChatFormatting.GREEN), true);
             }
@@ -311,19 +403,6 @@ public final class AxeModeHandler {
         }
     }
 
-    @Nullable
-    private static BlockPos getLookingAtPos(Player player, Level level) {
-        double reach = player.blockInteractionRange();
-        Vec3 eye = player.getEyePosition(1.0f);
-        Vec3 view = player.getViewVector(1.0f);
-        Vec3 end = eye.add(view.x * reach, view.y * reach, view.z * reach);
-        BlockHitResult result = level.clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
-        if (result.getType() == HitResult.Type.BLOCK) {
-            return result.getBlockPos();
-        }
-        return null;
-    }
-
     private static boolean hasClipboard() {
         Minecraft mc = Minecraft.getInstance();
         return mc.player != null && WorldEditBridge.getClipboardBounds(mc) != null;
@@ -331,16 +410,15 @@ public final class AxeModeHandler {
 
     /**
      * 在预览原点执行粘贴。
-     * - 固定模式：始终在 fixedOrigin 执行 paste，与渲染位置同步
+     * - 固定模式：始终在 fixedOrigin 执行 paste，与 Litematica 同步渲染位置一致
      * - 随玩家移动模式：单人世界且存在非零偏移时直接调用 WorldEdit API；
      *   无偏移或无法直接粘贴时退回到普通 //paste 命令。
      */
     private static void pasteAtPreview(LocalPlayer player) {
-        // 直接读配置判断模式，不依赖渲染线程的 lastMode
         PastePlacementMode mode = (PastePlacementMode) Configs.PastePreview.PASTE_PLACEMENT_MODE.getOptionListValue();
 
         if (mode == PastePlacementMode.FIXED) {
-            // 前置检查：单人世界才能直接 paste
+            // 仅单人世界
             if (!WorldEditBridge.canUseDirectPaste()) {
                 WeGuiMod.LOGGER.warn("[WE GUI] 固定模式 paste 失败：非单人世界");
                 player.displayClientMessage(Component.translatable("wegui.message.fixed_mode_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
@@ -348,20 +426,17 @@ public final class AxeModeHandler {
                 return;
             }
 
-            BlockPos fixedOrigin = PastePreviewRenderer.getFixedOrigin();
-            if (fixedOrigin == null) {
-                // 渲染线程尚未初始化 fixedOrigin，使用当前预览位置回填
-                fixedOrigin = getPasteOrigin(player);
-                PastePreviewRenderer.setFixedOrigin(fixedOrigin);
-                WeGuiMod.LOGGER.info("[WE GUI] fixedOrigin 未初始化，回填为当前预览位置 {}", fixedOrigin);
+            BlockPos fixedOriginPos = getFixedOrigin();
+            if (fixedOriginPos == null) {
+                fixedOriginPos = getPasteOrigin(player);
+                setFixedOrigin(fixedOriginPos);
+                WeGuiMod.LOGGER.info("[WE GUI] fixedOrigin 未初始化，回填为当前预览位置 {}", fixedOriginPos);
             }
 
-            WeGuiMod.LOGGER.info("[WE GUI] 固定模式 paste 到 {}", fixedOrigin);
-            boolean success = WorldEditBridge.pasteClipboardAt(player, fixedOrigin);
+            WeGuiMod.LOGGER.info("[WE GUI] 固定模式 paste 到 {}", fixedOriginPos);
+            boolean success = WorldEditBridge.pasteClipboardAt(player, fixedOriginPos);
             if (success) {
-                // 失效缓存，确保下一帧重新读取世界方块进行 mismatch 计算
-                PastePreviewRenderer.invalidateCache();
-                player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(fixedOrigin)).withStyle(ChatFormatting.GREEN), true);
+                player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(fixedOriginPos)).withStyle(ChatFormatting.GREEN), true);
             } else {
                 player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
             }
@@ -369,27 +444,19 @@ public final class AxeModeHandler {
         }
 
         // FOLLOW_PLAYER 模式
-        WeGuiMod.LOGGER.info("[WE GUI] pasteAtPreview 被调用, offset={}, canDirect={}",
-                pastePreviewOffset, WorldEditBridge.canUseDirectPaste());
-
         if (pastePreviewOffset.equals(BlockPos.ZERO)) {
-            WeGuiMod.LOGGER.info("[WE GUI] offset 为零，走普通 //paste");
             sendNormalPasteCommand(player);
             return;
         }
 
         if (!WorldEditBridge.canUseDirectPaste()) {
-            WeGuiMod.LOGGER.info("[WE GUI] 无法直接粘贴，提示多人服务器");
             player.displayClientMessage(Component.translatable("wegui.message.move_paste_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
             return;
         }
 
         BlockPos origin = getPasteOrigin(player);
-        WeGuiMod.LOGGER.info("[WE GUI] 调用 API 粘贴到 {}", origin);
         boolean success = WorldEditBridge.pasteClipboardAt(player, origin);
         if (success) {
-            // 失效缓存，确保下一帧重新读取世界方块进行 mismatch 计算
-            PastePreviewRenderer.invalidateCache();
             player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(origin)).withStyle(ChatFormatting.GREEN), true);
         } else {
             player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
