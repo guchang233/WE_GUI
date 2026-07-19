@@ -2,10 +2,11 @@ name: Build
 
 on:
   push:
-    branches: [main]
-    tags: ["v*"]
+    branches: [main, support/1.21.11]
+    tags: ["v*-26.x", "v*-1.21.11"]
   pull_request:
-    branches: [main]
+    branches: [main, support/1.21.11]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,13 +21,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Detect target from ref
+        id: detect
+        shell: bash
+        run: |
+          # 根据 ref（tag 或 branch）判断目标 MC 版本与 Java 版本
+          # tag 形如 refs/tags/v0.5.0-26.x / refs/tags/v0.5.0-1.21.11
+          # branch 形如 refs/heads/main / refs/heads/support/1.21.11
+          REF="${GITHUB_REF}"
+          if [[ "$REF" == refs/tags/*-26.x ]] || [[ "$REF" == refs/heads/main ]]; then
+            echo "java=25" >> "$GITHUB_OUTPUT"
+          elif [[ "$REF" == refs/tags/*-1.21.11 ]] || [[ "$REF" == refs/heads/support/1.21.11 ]]; then
+            echo "java=21" >> "$GITHUB_OUTPUT"
+          else
+            # 兜底：从 gradle.properties 读取 minecraft_version 推断
+            echo "java=21" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v6
 
-      - name: Setup Java 21
+      - name: Setup Java ${{ steps.detect.outputs.java }}
         uses: actions/setup-java@v5
         with:
-          java-version: "21"
+          java-version: "${{ steps.detect.outputs.java }}"
           distribution: temurin
 
       - name: Setup Gradle
@@ -54,41 +72,132 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Parse tag
+        id: parse
+        shell: bash
+        run: |
+          # tag 形如 v0.5.0-26.x / v0.5.0-1.21.11
+          # base-version: v0.5.0（去掉 -26.x / -1.21.11 后缀，用作同一个 release 的 tag_name）
+          # mc-version:   Modrinth game-versions
+          # jar-suffix:   jar 文件名后缀，便于在同一个 release 中区分两个构建
+          TAG="${GITHUB_REF_NAME}"
+          BASE_VERSION=$(echo "$TAG" | sed -E 's/-(26\.x|1\.21\.11)$//')
+          if echo "$TAG" | grep -qE -- '-26\.x$'; then
+            MC_VERSION="26.2"
+            JAR_SUFFIX="26.2"
+            JAVA_VER="25"
+          elif echo "$TAG" | grep -qE -- '-1\.21\.11$'; then
+            MC_VERSION="1.21.11"
+            JAR_SUFFIX="1.21.11"
+            JAVA_VER="21"
+          else
+            echo "Unknown tag format: $TAG (expected v<version>-26.x or v<version>-1.21.11)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "base-version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "mc-version=$MC_VERSION" >> "$GITHUB_OUTPUT"
+          echo "jar-suffix=$JAR_SUFFIX" >> "$GITHUB_OUTPUT"
+          echo "java-ver=$JAVA_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Read changelog
+        id: changelog
+        shell: bash
+        run: |
+          # 从 LOGS/CHANGELOG-V<BASE>.log 读取更新日志（base-version 形如 v0.5.0 -> V0.5.0）
+          BASE="${{ steps.parse.outputs.base-version }}"
+          VERSION_UPPER=$(echo "$BASE" | sed 's/^v//' | tr '[:lower:]' '[:upper:]')
+          CHANGELOG_FILE="LOGS/CHANGELOG-V${VERSION_UPPER}.log"
+          echo "Looking for changelog file: $CHANGELOG_FILE"
+          if [ -f "$CHANGELOG_FILE" ]; then
+            {
+              echo "changelog<<EOF"
+              cat "$CHANGELOG_FILE"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changelog=" >> "$GITHUB_OUTPUT"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "Warning: changelog file $CHANGELOG_FILE not found, will fall back to auto-generated notes"
+          fi
+
       - name: Download artifact
         uses: actions/download-artifact@v5
         with:
           name: WeGui-${{ github.run_number }}
 
-      - name: Create release
+      - name: Rename jar with MC version suffix
+        shell: bash
+        run: |
+          # 删除非 release jar（sources/dev/shadow/javadoc）
+          rm -f *-sources.jar *-dev.jar *-shadow.jar *-javadoc.jar
+          shopt -s nullglob
+          JARS=(*.jar)
+          if [ ${#JARS[@]} -ne 1 ]; then
+            echo "Expected exactly 1 release jar after cleanup, found ${#JARS[@]}:"
+            ls -la *.jar || true
+            exit 1
+          fi
+          JAR="${JARS[0]}"
+          BASE_NAME="${JAR%.jar}"
+          MC_SUFFIX="${{ steps.parse.outputs.jar-suffix }}"
+          mv "$JAR" "${BASE_NAME}-${MC_SUFFIX}.jar"
+          echo "Renamed: $JAR -> ${BASE_NAME}-${MC_SUFFIX}.jar"
+          echo "Final jar for release:"
+          ls -la *.jar
+
+      - name: Create/update shared release
+        # 两个 tag（v0.5.0-26.x 与 v0.5.0-1.21.11）共用同一个 release（tag_name = base-version，如 v0.5.0）
+        # softprops/action-gh-release 在 release 已存在时会自动追加文件而非覆盖
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ steps.parse.outputs.base-version }}
+          name: ${{ steps.parse.outputs.base-version }}
           files: "*.jar"
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.changelog }}
+          generate_release_notes: ${{ steps.changelog.outputs.found != 'true' }}
 
-      - name: Publish to Modrinth
+      - name: Publish to Modrinth (26.x)
+        if: steps.parse.outputs.mc-version == '26.2'
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          # 只发布主产物，排除 sources/dev jar
-          files: |
-            wegui-*.jar
-            !*-sources.jar
-            !*-dev.jar
-            !*-shadow.jar
-          # 版本号从 tag 名提取（v0.4.9 -> 0.4.9）
-          name: WeGui ${{ github.ref_name }}
-          version: ${{ github.ref_name }}
+          files: "*.jar"
+          name: WeGui ${{ steps.parse.outputs.tag }}
+          version: ${{ steps.parse.outputs.tag }}
           version-type: release
-          # 用 GitHub release 自动生成的 changelog
-          changelog: ${{ github.event.release.body }}
-          # changelog-file: CHANGELOG.md  # 不发布独立 changelog 文件
+          changelog: ${{ steps.changelog.outputs.changelog }}
           loaders: fabric
-          game-versions: |
-            1.21.8
-            1.21.9
-            1.21.10
-            1.21.11
+          game-versions: ${{ steps.parse.outputs.mc-version }}
+          dependencies: |
+            fabric-api(required){modrinth:P7dR8mSH}
+            malilib@>=0.29.2(required){modrinth:GcWjdA9I}
+            litematica@>=0.28.4-(required){modrinth:bEpr0Arc}
+            worldedit(optional){modrinth:1u6JkXh5}
+          java: |
+            25
+          fail-mode: warn
+
+      - name: Publish to Modrinth (1.21.11)
+        if: steps.parse.outputs.mc-version == '1.21.11'
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: "*.jar"
+          name: WeGui ${{ steps.parse.outputs.tag }}
+          version: ${{ steps.parse.outputs.tag }}
+          version-type: release
+          changelog: ${{ steps.changelog.outputs.changelog }}
+          loaders: fabric
+          game-versions: ${{ steps.parse.outputs.mc-version }}
           dependencies: |
             fabric-api(required){modrinth:P7dR8mSH}
             malilib@>=0.27.0(required){modrinth:GcWjdA9I}
