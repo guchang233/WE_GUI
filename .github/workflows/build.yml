@@ -72,11 +72,12 @@ jobs:
           modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
           # 只发布主产物，排除 sources/dev jar
+          # 注意：mc-publish 的 glob 需要显式路径前缀，否则排除规则不生效
           files: |
-            wegui-*.jar
-            !*-sources.jar
-            !*-dev.jar
-            !*-shadow.jar
+            build/libs/wegui-*.jar
+            !build/libs/*-sources.jar
+            !build/libs/*-dev.jar
+            !build/libs/*-shadow.jar
           # 版本号从 tag 名提取（v0.4.9 -> 0.4.9）
           name: WeGui ${{ github.ref_name }}
           version: ${{ github.ref_name }}
@@ -89,7 +90,8 @@ jobs:
             26.2
           dependencies: |
             fabric-api(required){modrinth:P7dR8mSH}
-            malilib@>=0.29.0(required){modrinth:GcWjdA9I}
+            malilib@>=0.29.2(required){modrinth:GcWjdA9I}
+            litematica@>=0.28.4-(required){modrinth:bEpr0Arc}
             worldedit(optional){modrinth:1u6JkXh5}
           java: |
             25

@@ -2,10 +2,10 @@
   "required": true,
   "minVersion": "0.8",
   "package": "com.sow.wegui.client.mixin",
-  "compatibilityLevel": "JAVA_21",
+  "compatibilityLevel": "JAVA_25",
   "client": [
     "MouseHandlerMixin",
     "ClientPacketListenerMixin",
-    "RenderTypeAccessor"
+    "ButtonBaseMixin"
   ]
 }

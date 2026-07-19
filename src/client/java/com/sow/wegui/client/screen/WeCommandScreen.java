@@ -31,11 +31,12 @@ import java.util.Set;
  */
 public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry, WidgetListCommands> implements ISelectionListener<CommandRow> {
     private static final int SIDE_BAR_WIDTH = 120;
-    private static final int TOP_BAR_HEIGHT = 42;
+    private static final int TOP_BAR_HEIGHT = 56;
     private static final int BOTTOM_BAR_HEIGHT = 32;
     private static final int PADDING = 10;
     private static final int CATEGORY_ENTRY_HEIGHT = 24;
     private static final int CATEGORY_SCROLLBAR_WIDTH = 6;
+    private static final int STATUS_BAR_HEIGHT = 14;
 
     private FilterEntry selectedFilter = new FilterEntry(FilterMode.ALL, null, StringUtils.translate("wegui.command.category.all"), 0);
     private GuiTextFieldGeneric searchField;
@@ -46,6 +47,8 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
     private int categoryEntryCount = 0;
     private boolean scrollbarDragging = false;
     private double scrollbarDragOffset = 0;
+    private com.sow.wegui.WeStatus cachedStatus;
+    private long lastStatusUpdateTick = 0;
 
     public WeCommandScreen() {
         super(PADDING + SIDE_BAR_WIDTH, TOP_BAR_HEIGHT);
@@ -278,10 +281,51 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
     public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTick) {
         this.drawSearchBackground(ctx);
         this.drawSearchHint(ctx);
+        this.drawStatusBar(ctx);
         if (this.getListWidget() != null) {
             super.drawContents(ctx, mouseX, mouseY, partialTick);
         }
         this.drawCategoryScrollbar(ctx);
+    }
+
+    /** 顶部搜索框下方的 WE 状态行：选区尺寸 + 剪贴板尺寸。 */
+    private void drawStatusBar(GuiContext ctx) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+
+        long tick = mc.level.getGameTime();
+        if (cachedStatus == null || tick - lastStatusUpdateTick >= 10) {
+            cachedStatus = com.sow.wegui.client.WorldEditBridge.capture(mc);
+            lastStatusUpdateTick = tick;
+        }
+
+        int x = PADDING + SIDE_BAR_WIDTH;
+        int y = 34;
+        int w = this.width - x - PADDING;
+        ctx.fill(x - 1, y - 1, x + w + 1, y + STATUS_BAR_HEIGHT + 1, 0xFF1A1A1A);
+
+        String statusText = formatStatusText(cachedStatus);
+        ctx.drawString(this.font, statusText, x + 4, y + 3, 0xFFCCCCCC, false);
+    }
+
+    private static String formatStatusText(com.sow.wegui.WeStatus st) {
+        String key = switch (st.type()) {
+            case NO_WORLDEDIT -> "wegui.status.no_worldedit";
+            case NO_SELECTION -> "wegui.status.no_selection";
+            case READY -> null;
+        };
+        if (key != null) {
+            return "§c" + Component.translatable(key).getString();
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("§a").append(Component.translatable("wegui.panel.status.selection", st.width() + "×" + st.height() + "×" + st.length()).getString());
+        sb.append(" §7| ");
+        if (st.hasClipboard()) {
+            sb.append("§b").append(Component.translatable("wegui.panel.status.clipboard", st.clipboardWidth() + "×" + st.clipboardHeight() + "×" + st.clipboardLength()).getString());
+        } else {
+            sb.append("§7").append(Component.translatable("wegui.panel.status.no_clipboard").getString());
+        }
+        return sb.toString();
     }
 
     @Override

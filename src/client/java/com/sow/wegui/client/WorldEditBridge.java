@@ -3,12 +3,16 @@ package com.sow.wegui.client;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.WorldEdit;
+import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.fabric.FabricAdapter;
 import com.sk89q.worldedit.function.operation.Operation;
 import com.sk89q.worldedit.function.operation.Operations;
 import com.sk89q.worldedit.command.tool.InvalidToolBindException;
 import com.sk89q.worldedit.command.tool.SelectionWand;
 import com.sk89q.worldedit.extension.platform.Capability;
+import com.sk89q.worldedit.extent.AbstractDelegateExtent;
+import com.sk89q.worldedit.extent.Extent;
+import com.sk89q.worldedit.extent.transform.BlockTransformExtent;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.regions.CuboidRegion;
@@ -17,10 +21,12 @@ import com.sk89q.worldedit.regions.RegionSelector;
 import com.sk89q.worldedit.regions.selector.CuboidRegionSelector;
 import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldedit.world.block.BaseBlock;
+import com.sk89q.worldedit.world.block.BlockStateHolder;
 import com.sk89q.worldedit.world.item.ItemType;
-import com.sk89q.worldedit.extent.transform.BlockTransformExtent;
+import com.sk89q.worldedit.world.registry.BlockMaterial;
 import com.sow.wegui.WeGuiMod;
 import com.sow.wegui.WeStatus;
+import com.sow.wegui.config.Configs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -38,14 +44,10 @@ import java.util.Map;
 public final class WorldEditBridge {
     private WorldEditBridge() {}
 
-    /** WorldEdit 版本号缓存，运行时不变，避免每次 capture 重复反射查询 */
     private static volatile boolean versionChecked = false;
     private static String cachedVersion = "";
 
-    /**
-     * 无剪贴板状态缓存：避免无剪贴板时每帧抛 EmptyClipboardException（异常构造开销大）。
-     * 记录游戏 tick，在此 tick 之前跳过 getClipboard() 调用。
-     */
+    /** 无剪贴板状态短期缓存：避免每帧抛 EmptyClipboardException 的开销。 */
     private static volatile long noClipboardUntilTick = 0L;
 
     public static WeStatus capture(Minecraft mc) {
@@ -92,7 +94,6 @@ public final class WorldEditBridge {
     @Nullable
     private static ClipboardBounds getClipboardBounds(@Nullable LocalSession session) {
         if (session == null) return null;
-        // 短期缓存"无剪贴板"状态，避免频繁抛 EmptyClipboardException（每帧渲染都会调用）
         Minecraft mc = Minecraft.getInstance();
         long tick = mc.level != null ? mc.level.getGameTime() : 0L;
         if (noClipboardUntilTick > 0 && tick < noClipboardUntilTick) {
@@ -101,20 +102,19 @@ public final class WorldEditBridge {
         try {
             ClipboardHolder holder = session.getClipboard();
             if (holder == null) {
-                noClipboardUntilTick = tick + 20;  // 缓存 20 tick（1 秒）
+                noClipboardUntilTick = tick + 20;
                 return null;
             }
             com.sk89q.worldedit.extent.clipboard.Clipboard clipboard = holder.getClipboard();
             BlockVector3 min = clipboard.getMinimumPoint();
             BlockVector3 max = clipboard.getMaximumPoint();
             BlockVector3 origin = clipboard.getOrigin();
-            noClipboardUntilTick = 0L;  // 有剪贴板，重置标志
+            noClipboardUntilTick = 0L;
             return new ClipboardBounds(
                     min.x(), min.y(), min.z(),
                     max.x() - min.x() + 1, max.y() - min.y() + 1, max.z() - min.z() + 1,
                     origin.x(), origin.y(), origin.z());
         } catch (Throwable e) {
-            // 无剪贴板（EmptyClipboardException），缓存 20 tick 后再重试
             noClipboardUntilTick = tick + 20;
             return null;
         }
@@ -184,16 +184,13 @@ public final class WorldEditBridge {
                             BlockPos target = new BlockPos(transformed.x(), transformed.y(), transformed.z());
 
                             if (base.getBlockType().id().equals("minecraft:air")) {
-                                // 保留空气位置用于 EXTRA 检测（原理图空气 + 世界非空 = 多余方块）
+                                // 保留空气位置用于 mismatch 验证
                                 result.put(target, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
                                 continue;
                             }
 
-                            // 应用 //flip、//rotate 等变换到方块状态（朝向、半砖上下等）
-                            // 使用 WorldEdit 内部 paste 时相同的 BlockTransformExtent，确保与 //paste 结果一致
+                            // 应用变换到方块状态
                             BaseBlock transformedBase = BlockTransformExtent.transform(base, transform);
-                            // 直接用 FabricAdapter.adapt 映射 WE BlockState → MC BlockState，
-                            // 比手搓的 BlockStateParser 字符串解析更高效、更准确。
                             BlockState state = FabricAdapter.get().toNativeBlockState(transformedBase.toImmutableState());
                             if (state == null || state.isAir()) {
                                 result.put(target, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
@@ -258,8 +255,6 @@ public final class WorldEditBridge {
             RegionSelector selector = session.getRegionSelector(weWorld);
             if (!(selector instanceof CuboidRegionSelector cuboidSelector)) return null;
 
-            // 用 getIncompleteRegion().getPos1()/getPos2() 公开 API 替代反射，
-            // 未设置的点返回 null，与原反射行为一致。
             CuboidRegion incomplete = cuboidSelector.getIncompleteRegion();
             if (incomplete == null) return null;
             BlockVector3 p1 = incomplete.getPos1();
@@ -389,20 +384,22 @@ public final class WorldEditBridge {
 
             WeGuiMod.LOGGER.info("[WE GUI] pasteClipboardAt: 调度到服务端线程, target=({}, {}, {})", tx, ty, tz);
             final ServerLevel finalLevel = level;
+            final boolean replaceAirOnly = Configs.PastePreview.PASTE_REPLACE_AIR_ONLY.getBooleanValue();
             server.execute(() -> {
                 try (EditSession editSession = WorldEdit.getInstance().getEditSessionFactory().getEditSession(finalWeWorld, -1)) {
-                    Operation operation = finalHolder.createPaste(editSession)
+                    // replaceAirOnly=true 时用 AirOnlyExtent 包装：只在目标位置当前为空气时放置剪贴板方块。
+                    // 同时 ignoreAirBlocks(true) 跳过剪贴板中的空气方块（无需把空气“放置”到空气上）。
+                    Extent targetExtent = replaceAirOnly ? new AirOnlyExtent(editSession) : editSession;
+                    Operation operation = finalHolder.createPaste(targetExtent)
                             .to(BlockVector3.at(tx, ty, tz))
-                            .ignoreAirBlocks(false)
+                            .ignoreAirBlocks(replaceAirOnly)
                             .build();
                     Operations.complete(operation);
                     finalSession.remember(editSession);
                     WeGuiMod.LOGGER.info("[WE GUI] pasteClipboardAt: 粘贴成功 at ({}, {}, {})", tx, ty, tz);
 
-                    // 主动通知客户端方块更新：WorldEdit 的 paste 可能绕过正常的方块更新流程，
-                    // 导致客户端 level.getBlockState(target) 仍返回旧状态（空气），
-                    // 从而 mismatch overlay 仍显示"方块缺失"颜色。
-                    // 遍历剪贴板方块位置，调用 sendBlockUpdated 强制通知客户端刷新。
+                    // 主动通知客户端方块更新：WorldEdit paste 可能绕过正常方块更新流程，
+                    // 导致客户端 level.getBlockState 仍返回旧状态，使 mismatch overlay 显示错误颜色。
                     try {
                         com.sk89q.worldedit.extent.clipboard.Clipboard clipboard = finalHolder.getClipboard();
                         BlockVector3 cbMin = clipboard.getMinimumPoint();
@@ -421,7 +418,6 @@ public final class WorldEditBridge {
                                             tx + transformed.x(),
                                             ty + transformed.y(),
                                             tz + transformed.z());
-                                    // 主动通知客户端方块更新（flags=3 = NOTIFY_ALL）
                                     var state = finalLevel.getBlockState(notifyPos);
                                     finalLevel.sendBlockUpdated(notifyPos, state, state, 3);
                                 }
@@ -438,6 +434,25 @@ public final class WorldEditBridge {
         } catch (Throwable e) {
             WeGuiMod.LOGGER.error("[WE GUI] pasteClipboardAt: 调度异常 at {}: {}", target, e);
             return false;
+        }
+    }
+
+    /** 只允许在目标位置当前为空气时放置方块的 Extent 包装器。
+     * 用于 PASTE_REPLACE_AIR_ONLY 配置：避免粘贴覆盖已有建筑。 */
+    private static final class AirOnlyExtent extends AbstractDelegateExtent {
+        AirOnlyExtent(Extent extent) {
+            super(extent);
+        }
+
+        @Override
+        public <T extends BlockStateHolder<T>> boolean setBlock(BlockVector3 location, T block) throws WorldEditException {
+            com.sk89q.worldedit.world.block.BlockState existing = getBlock(location);
+            BlockMaterial mat = existing.getBlockType().getMaterial();
+            if (mat == null || !mat.isAir()) {
+                // 目标位置非空气，跳过（不替换已有方块）
+                return true;
+            }
+            return super.setBlock(location, block);
         }
     }
 }

@@ -10,7 +10,7 @@
   },
   "license": "MIT",
   "icon": "assets/wegui/icon.png",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
     "main": ["com.sow.wegui.WeGuiMod"],
     "client": ["com.sow.wegui.client.WeGuiClient"]
@@ -23,7 +23,8 @@
     "minecraft": ">=26.2",
     "java": ">=25",
     "fabric-api": "*",
-    "malilib": ">=0.29.0"
+    "malilib": ">=0.29.2",
+    "litematica": ">=0.28.4-"
   },
   "suggests": {
     "worldedit": "*"

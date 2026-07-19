@@ -32,8 +32,20 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
             x += this.createButton(x, y, -1, tab);
         }
 
-        ButtonGeneric panel = new ButtonGeneric(this.width - 90, y, 80, 20, StringUtils.translate("wegui.command.open_panel"));
-        this.addButton(panel, (btn, mouseButton) -> this.mc.setScreenAndShow(new WeCommandScreen()));
+        // PASTE_PREVIEW tab 下额外提供"保存原理图"按钮
+        if (getActiveTab() == ConfigGuiTab.PASTE_PREVIEW) {
+            ButtonGeneric saveSchematic = new ButtonGeneric(this.width - 200, y, 100, 20,
+                    StringUtils.translate("wegui.schematic.button_in_config"));
+            this.addButton(saveSchematic, (btn, mouseButton) ->
+                    this.mc.setScreenAndShow(new SaveSchematicScreen(this)));
+            ButtonGeneric panel = new ButtonGeneric(this.width - 90, y, 80, 20,
+                    StringUtils.translate("wegui.command.open_panel"));
+            this.addButton(panel, (btn, mouseButton) -> this.mc.setScreenAndShow(new WeCommandScreen()));
+        } else {
+            ButtonGeneric panel = new ButtonGeneric(this.width - 90, y, 80, 20,
+                    StringUtils.translate("wegui.command.open_panel"));
+            this.addButton(panel, (btn, mouseButton) -> this.mc.setScreenAndShow(new WeCommandScreen()));
+        }
     }
 
     @Override
@@ -55,8 +67,6 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
             configs = Configs.CommandPanel.OPTIONS;
         } else if (tab == ConfigGuiTab.HOTKEYS) {
             configs = Configs.Hotkeys.OPTIONS;
-        } else if (tab == ConfigGuiTab.RENDER_STYLES) {
-            configs = Configs.RenderStyles.OPTIONS;
         } else {
             configs = ImmutableList.of();
         }
@@ -78,7 +88,6 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         configs.addAll(ConfigOptionWrapper.createFor(Configs.ModeIndicator.OPTIONS));
         configs.addAll(ConfigOptionWrapper.createFor(Configs.CommandPanel.OPTIONS));
         configs.addAll(ConfigOptionWrapper.createFor(Configs.Hotkeys.OPTIONS));
-        configs.addAll(ConfigOptionWrapper.createFor(Configs.RenderStyles.OPTIONS));
         return configs;
     }
 
@@ -87,8 +96,6 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         ConfigGuiTab tab = getActiveTab();
         if (tab == ConfigGuiTab.STATUS_BAR || tab == ConfigGuiTab.PASTE_PREVIEW) {
             return 140;
-        } else if (tab == ConfigGuiTab.RENDER_STYLES) {
-            return 200;
         }
         return super.getConfigWidth();
     }
@@ -138,8 +145,7 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         PASTE_PREVIEW("wegui.config.tab.paste_preview"),
         MODE_INDICATOR("wegui.config.tab.mode_indicator"),
         COMMAND_PANEL("wegui.config.tab.command_panel"),
-        HOTKEYS("wegui.config.tab.hotkeys"),
-        RENDER_STYLES("wegui.config.tab.render_styles");
+        HOTKEYS("wegui.config.tab.hotkeys");
 
         private final String translationKey;
 
