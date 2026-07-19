@@ -1,5 +1,8 @@
 ## v0.5.0 更新内容
 
+本版本为双分支同步发布：26.x（主线，含 Litematica 渲染集成）与 1.21.11（兼容版本，使用自带渲染器）。
+
+### 26.x 分支新增：
 1. 添加 Litematica MOD 为渲染依赖，由 Litematica 接管投影与选区框渲染
 2. 删去旧版本中自带的渲染文件，模组仅负责 WorldEdit 剪贴板读取 + LitematicaBridge 同步 + WE 集成配置 + 命令面板 + 状态栏
 3. 新增"仅替换空气方块"的粘贴模式（Paste Preview 配置页可切换）
@@ -12,3 +15,8 @@
    - pastePlacementMode 默认改为 Fixed（固定预览位置）
    - commandPanelFavorites 默认包含 copy/paste/clearclipboard/flip/rotate/set/replace/undo/redo/desel
 10. 清理旧配置文件引用残留
+
+### 1.21.11 兼容版本：
+- 版本号对齐至 0.5.0（与 26.x 分支同步发布）
+- 功能与 v0.4.9 一致（WorldEdit GUI 命令面板、快捷轮盘、自带粘贴预览渲染、malilib 配置系统、状态栏、命令历史）
+- 不含 Litematica 渲染集成（26.x 限定功能）
