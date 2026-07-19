@@ -1,6 +1,6 @@
 ## v0.5.0 更新内容
 
-本版本为双分支同步发布：26.x（主线，含 Litematica 渲染集成）与 1.21.11（兼容版本，使用自带渲染器）。
+本版本为双分支同步发布：26.x（主线）与 1.21.11（兼容版本），两分支功能对齐，均含 Litematica 渲染集成。
 
 ### 26.x 分支新增：
 1. 添加 Litematica MOD 为渲染依赖，由 Litematica 接管投影与选区框渲染
@@ -17,6 +17,14 @@
 10. 清理旧配置文件引用残留
 
 ### 1.21.11 兼容版本：
-- 版本号对齐至 0.5.0（与 26.x 分支同步发布）
-- 功能与 v0.4.9 一致（WorldEdit GUI 命令面板、快捷轮盘、自带粘贴预览渲染、malilib 配置系统、状态栏、命令历史）
-- 不含 Litematica 渲染集成（26.x 限定功能）
+- 版本号对齐至 0.5.0，功能与 26.x 分支同步（移植 v0.5.0 全部新功能）
+- Litematica 渲染集成（适配 litematica 0.25.0 + malilib 0.27.x）：
+  · 剪贴板通过 SchematicPlacementManager 注入 placement，由 Litematica 渲染 ghost blocks 与 mismatch
+  · WE 选区框通过 malilib RenderUtils.renderAreaOutline + renderBlockOutline 渲染
+    （litematica 0.25.0 的 OverlayRenderer.BoxType 是 package-private，改用公开的 RenderUtils API）
+- 原理图保存（SaveSchematicScreen + SchematicExporter，支持 .litematic / .nbt）
+- "只替换空气方块"粘贴模式（WorldEditBridge.AirOnlyExtent）
+- 滚轮禁用（ButtonBaseMixin），退出清理，AxeModeHandler fixedOrigin 本地化
+- 1.21.11 API 适配：player.displayClientMessage / mc.screen / mc.setScreen / FabricAdapter.adapt
+- 依赖：malilib via Modrinth maven（0.27.7）+ litematica 本地 jar（0.25.0，Modrinth maven 未发布 POM）
+
