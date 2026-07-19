@@ -55,39 +55,95 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine game versions from branch
+        id: gamever
+        shell: bash
+        run: |
+          # tag 触发时，检查 tag 所在 commit 属于哪个分支，决定 Modrinth game-versions
+          # support/26.x 分支 -> 26.2
+          # main 分支         -> 1.21.11
+          git fetch origin --no-tags 2>/dev/null || true
+          BRANCHES=$(git branch -r --contains ${{ github.sha }} 2>/dev/null || true)
+          echo "Tag commit is on branches:"
+          echo "$BRANCHES"
+          if echo "$BRANCHES" | grep -q 'origin/support/26.x'; then
+            echo "game-versions=26.2" >> "$GITHUB_OUTPUT"
+            echo "target=support/26.x" >> "$GITHUB_OUTPUT"
+          elif echo "$BRANCHES" | grep -q 'origin/main'; then
+            echo "game-versions=1.21.11" >> "$GITHUB_OUTPUT"
+            echo "target=main" >> "$GITHUB_OUTPUT"
+          else
+            # 默认按 support/26.x 处理（当前主开发分支）
+            echo "game-versions=26.2" >> "$GITHUB_OUTPUT"
+            echo "target=unknown(default 26.2)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read changelog
+        id: changelog
+        shell: bash
+        run: |
+          # tag 名 v0.5.0 -> 版本号 0.5.0 -> 大写 0.5.0 -> 文件名 LOGS/CHANGELOG-V0.5.0.log
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION_UPPER=$(echo "$VERSION" | tr '[:lower:]' '[:upper:]')
+          CHANGELOG_FILE="LOGS/CHANGELOG-V${VERSION_UPPER}.log"
+          echo "Looking for changelog file: $CHANGELOG_FILE"
+          if [ -f "$CHANGELOG_FILE" ]; then
+            {
+              echo "changelog<<EOF"
+              cat "$CHANGELOG_FILE"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changelog=" >> "$GITHUB_OUTPUT"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "Warning: changelog file $CHANGELOG_FILE not found, will fall back to auto-generated notes"
+          fi
+
       - name: Download artifact
         uses: actions/download-artifact@v5
         with:
           name: WeGui-${{ github.run_number }}
 
+      - name: Keep only release jar
+        shell: bash
+        run: |
+          echo "JARs before cleanup:"
+          ls -la *.jar || true
+          rm -f *-sources.jar *-dev.jar *-shadow.jar *-javadoc.jar
+          echo "JARs after cleanup (release main file only):"
+          ls -la *.jar
+
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
           files: "*.jar"
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.changelog }}
+          generate_release_notes: ${{ steps.changelog.outputs.found != 'true' }}
 
       - name: Publish to Modrinth
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          # 只发布主产物，排除 sources/dev jar
-          # 注意：mc-publish 的 glob 需要显式路径前缀，否则排除规则不生效
-          files: |
-            build/libs/wegui-*.jar
-            !build/libs/*-sources.jar
-            !build/libs/*-dev.jar
-            !build/libs/*-shadow.jar
-          # 版本号从 tag 名提取（v0.4.9 -> 0.4.9）
+          # 只上传主 release jar（已在上一 step 删除 sources/dev/shadow）
+          files: "*.jar"
+          # 版本号与名称从 tag 名提取（v0.5.0）
           name: WeGui ${{ github.ref_name }}
           version: ${{ github.ref_name }}
           version-type: release
-          # 用 GitHub release 自动生成的 changelog
-          changelog: ${{ github.event.release.body }}
-          # changelog-file: CHANGELOG.md  # 不发布独立 changelog 文件
+          # changelog 从 LOGS/CHANGELOG-V{VERSION}.log 文件读取
+          changelog: ${{ steps.changelog.outputs.changelog }}
           loaders: fabric
-          game-versions: |
-            26.2
+          # game-versions 根据触发分支自动判断：
+          #   support/26.x -> 26.2
+          #   main         -> 1.21.11
+          game-versions: ${{ steps.gamever.outputs.game-versions }}
           dependencies: |
             fabric-api(required){modrinth:P7dR8mSH}
             malilib@>=0.29.2(required){modrinth:GcWjdA9I}

@@ -29,7 +29,9 @@ Thumbs.db
 
 # Logs
 *.log
-
+# 例外：LOGS/ 目录下的 CHANGELOG-*.log 需要随仓库发布，供 CI 读取后推送至 Modrinth
+!LOGS/
+!LOGS/CHANGELOG-*.log
 # Local
 *.local
 .env
