@@ -40,11 +40,9 @@ public final class LitematicaBridge {
     private static final String WEGUI_PLACEMENT_NAME = "WeGui Clipboard Sync";
     private static final String WEGUI_SELECTION_BOX_NAME = "WeGui WE Selection";
     private static final String REGION_NAME = "Main";
-    private static final long SYNC_INTERVAL_TICKS = 10L;
 
     @Nullable private static LitematicaSchematic currentSchematic;
     @Nullable private static SchematicPlacement currentPlacement;
-    private static long lastSyncTick = -1L;
     private static int lastClipboardHash = 0;
     private static boolean registered = false;
     @Nullable private static BlockPos lastSyncedOrigin = null;
@@ -126,10 +124,6 @@ public final class LitematicaBridge {
             lastClipboardHash = 0;
             return;
         }
-
-        long tick = mc.level.getGameTime();
-        if (tick - lastSyncTick < SYNC_INTERVAL_TICKS) return;
-        lastSyncTick = tick;
 
         Map<BlockPos, BlockState> blocks = WorldEditBridge.getClipboardBlocks(mc);
         if (blocks == null || blocks.isEmpty()) {
