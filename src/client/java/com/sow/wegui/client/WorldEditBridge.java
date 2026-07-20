@@ -95,6 +95,34 @@ public final class WorldEditBridge {
         return getClipboardBounds(WorldEditAdapter.session(mc.player));
     }
 
+    /**
+     * 轻量级获取当前剪贴板 holder 引用，不遍历方块。
+     * 用于 LitematicaBridge 检测剪贴板是否变化（O(1) 引用比较代替 O(n) hashCode）。
+     * WE 每次 //copy 会创建新的 ClipboardHolder 实例，因此 == 比较即可判断内容是否变化。
+     */
+    @Nullable
+    public static ClipboardHolder getClipboardHolder(Minecraft mc) {
+        if (mc.player == null) return null;
+        com.sk89q.worldedit.LocalSession session = WorldEditAdapter.session(mc.player);
+        if (session == null) return null;
+        long tick = mc.level != null ? mc.level.getGameTime() : 0L;
+        if (noClipboardUntilTick > 0 && tick < noClipboardUntilTick) {
+            return null;
+        }
+        try {
+            ClipboardHolder holder = session.getClipboard();
+            if (holder == null) {
+                noClipboardUntilTick = tick + 20;
+                return null;
+            }
+            noClipboardUntilTick = 0L;
+            return holder;
+        } catch (Throwable e) {
+            noClipboardUntilTick = tick + 20;
+            return null;
+        }
+    }
+
     @Nullable
     private static ClipboardBounds getClipboardBounds(@Nullable LocalSession session) {
         if (session == null) return null;
