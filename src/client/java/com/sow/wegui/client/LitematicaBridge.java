@@ -3,6 +3,7 @@ package com.sow.wegui.client;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.sow.wegui.WeGuiMod;
 import com.sow.wegui.config.Configs;
+import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.session.ClipboardHolder;
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.schematic.LitematicaSchematic;
@@ -46,6 +47,7 @@ public final class LitematicaBridge {
     @Nullable private static LitematicaSchematic currentSchematic;
     @Nullable private static SchematicPlacement currentPlacement;
     @Nullable private static ClipboardHolder lastHolder = null;
+    @Nullable private static Transform lastTransform = null;
     private static boolean registered = false;
     @Nullable private static BlockPos lastSyncedOrigin = null;
 
@@ -65,6 +67,7 @@ public final class LitematicaBridge {
     private static void onWorldDisconnect() {
         removeCurrentPlacement();
         lastHolder = null;
+        lastTransform = null;
         lastSyncedOrigin = null;
         AxeModeHandler.setFixedOrigin(null);
         WeGuiMod.LOGGER.info("[WeGui] 存档断开：已清理 Litematica placement 与同步状态");
@@ -124,28 +127,37 @@ public final class LitematicaBridge {
         if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) {
             removeCurrentPlacement();
             lastHolder = null;
+            lastTransform = null;
             return;
         }
 
-        // O(1) 引用比较：检测剪贴板是否变化（//copy 会创建新的 ClipboardHolder 实例）
+        // O(1) 引用比较：检测剪贴板是否变化
+        // - //copy 会创建新的 ClipboardHolder 实例（holder 引用变化）
+        // - //flip / //rotate 不会创建新 holder，而是调用 holder.setTransform(...) 替换内部
+        //   transform 字段（getTransform 返回的字段引用会变化）
+        // 因此需要同时比较 holder 与 transform 两个引用，才能完整覆盖三种命令。
         ClipboardHolder holder = WorldEditBridge.getClipboardHolder(mc);
         if (holder == null) {
             removeCurrentPlacement();
             lastHolder = null;
+            lastTransform = null;
             return;
         }
 
         BlockPos newOrigin = AxeModeHandler.getEffectiveOrigin(mc);
+        Transform currentTransform = holder.getTransform();
 
-        if (holder != lastHolder) {
-            // 剪贴板内容变化：重新读取方块并重建 schematic（O(n)，仅在 //copy、//flip、//rotate 时触发）
+        if (holder != lastHolder || currentTransform != lastTransform) {
+            // 剪贴板内容或变换变化：重新读取方块并重建 schematic（O(n)，仅在 //copy、//flip、//rotate 时触发）
             Map<BlockPos, BlockState> blocks = WorldEditBridge.getClipboardBlocks(mc);
             if (blocks == null || blocks.isEmpty()) {
                 removeCurrentPlacement();
                 lastHolder = null;
+                lastTransform = null;
                 return;
             }
             lastHolder = holder;
+            lastTransform = currentTransform;
             syncToLitematica(blocks, newOrigin);
         } else {
             // 剪贴板内容未变：只检查 origin 是否需要更新（O(1)）

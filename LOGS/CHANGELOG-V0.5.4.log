@@ -1,0 +1,5 @@
+v0.5.4 - 2025-07-20
+
+[Bug Fix]
+- 修复 //flip 和 //rotate 后粘贴预览未同步更新的问题
+- 新增 transform 引用比较，配合 holder 引用比较完整覆盖 copy/flip/rotate 三种命令
