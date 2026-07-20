@@ -201,6 +201,7 @@ jobs:
           dependencies: |
             fabric-api(required){modrinth:P7dR8mSH}
             malilib@>=0.27.0(required){modrinth:GcWjdA9I}
+            litematica@>=0.25.0-(required){modrinth:bEpr0Arc}
             worldedit(optional){modrinth:1u6JkXh5}
           java: |
             21
