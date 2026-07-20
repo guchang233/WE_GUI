@@ -1,0 +1,25 @@
+## v0.5.3 更新内容
+
+### 性能优化
+- 修复 copy 大型建筑后严重卡顿的问题（v0.5.1 引入的回归）
+- 根因：v0.5.1 移除节流后，每 tick 都调用 getClipboardBlocks（O(n) 遍历剪贴板）+ hashCode（O(n)），大型建筑下每秒上亿次操作
+
+### 优化方案
+1. **用 holder 引用比较代替 getClipboardBlocks + hashCode**（O(1) 代替 O(n)）
+   - WE 每次 //copy 创建新的 ClipboardHolder 实例，== 比较即可判断内容是否变化
+   - 只有引用变化时才调用 getClipboardBlocks 重建 schematic
+2. **origin 变化时用 placement.setOrigin() 而非重建 schematic**（O(1) 代替 O(n)）
+   - FIXED 模式滚轮移动、FOLLOW_PLAYER 模式玩家移动时，直接更新 placement 位置
+   - 不再重新读取剪贴板和重建 schematic
+
+### 性能对比
+| 场景 | v0.5.1/v0.5.2 | v0.5.3 |
+|------|---------------|--------|
+| 大型建筑 //copy 后每 tick | O(n) getClipboardBlocks + O(n) hashCode | O(1) holder 引用比较 |
+| FIXED 滚轮移动预览 | O(n) 重建 schematic | O(1) setOrigin |
+| FOLLOW_PLAYER 玩家移动 | O(n) 重建 schematic | O(1) setOrigin |
+| //copy、//flip、//rotate | O(n) | O(n)（不变，但只触发一次）|
+
+### 说明
+- 预览图跟随延迟与 v0.5.1 一致（无延迟），但不再卡顿
+- 两分支（26.x 与 1.21.11）同步发布

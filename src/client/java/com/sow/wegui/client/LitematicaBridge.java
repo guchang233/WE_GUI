@@ -4,6 +4,7 @@ import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.sow.wegui.WeGuiMod;
 import com.sow.wegui.config.Configs;
+import com.sk89q.worldedit.session.ClipboardHolder;
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.render.OverlayRenderer;
 import fi.dy.masa.litematica.schematic.LitematicaSchematic;
@@ -43,7 +44,7 @@ public final class LitematicaBridge {
 
     @Nullable private static LitematicaSchematic currentSchematic;
     @Nullable private static SchematicPlacement currentPlacement;
-    private static int lastClipboardHash = 0;
+    @Nullable private static ClipboardHolder lastHolder = null;
     private static boolean registered = false;
     @Nullable private static BlockPos lastSyncedOrigin = null;
 
@@ -62,7 +63,7 @@ public final class LitematicaBridge {
     /** 退出存档时清理 Litematica placement 与内部同步状态，避免重进后残留旧投影。 */
     private static void onWorldDisconnect() {
         removeCurrentPlacement();
-        lastClipboardHash = 0;
+        lastHolder = null;
         lastSyncedOrigin = null;
         AxeModeHandler.setFixedOrigin(null);
         WeGuiMod.LOGGER.info("[WeGui] 存档断开：已清理 Litematica placement 与同步状态");
@@ -121,35 +122,51 @@ public final class LitematicaBridge {
         // 关闭总开关时移除已有 placement
         if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) {
             removeCurrentPlacement();
-            lastClipboardHash = 0;
+            lastHolder = null;
             return;
         }
 
-        Map<BlockPos, BlockState> blocks = WorldEditBridge.getClipboardBlocks(mc);
-        if (blocks == null || blocks.isEmpty()) {
+        // O(1) 引用比较：检测剪贴板是否变化（//copy 会创建新的 ClipboardHolder 实例）
+        ClipboardHolder holder = WorldEditBridge.getClipboardHolder(mc);
+        if (holder == null) {
             removeCurrentPlacement();
-            lastClipboardHash = 0;
+            lastHolder = null;
             return;
         }
 
-        int hash = blocks.hashCode();
-        if (hash == lastClipboardHash) {
-            maybeResyncForOriginChange(mc, blocks);
-            return;
-        }
-        lastClipboardHash = hash;
+        BlockPos newOrigin = AxeModeHandler.getEffectiveOrigin(mc);
 
-        BlockPos origin = AxeModeHandler.getEffectiveOrigin(mc);
-        syncToLitematica(blocks, origin);
+        if (holder != lastHolder) {
+            // 剪贴板内容变化：重新读取方块并重建 schematic（O(n)，仅在 //copy、//flip、//rotate 时触发）
+            Map<BlockPos, BlockState> blocks = WorldEditBridge.getClipboardBlocks(mc);
+            if (blocks == null || blocks.isEmpty()) {
+                removeCurrentPlacement();
+                lastHolder = null;
+                return;
+            }
+            lastHolder = holder;
+            syncToLitematica(blocks, newOrigin);
+        } else {
+            // 剪贴板内容未变：只检查 origin 是否需要更新（O(1)）
+            if (!newOrigin.equals(lastSyncedOrigin)) {
+                updatePlacementOrigin(newOrigin);
+            }
+        }
     }
 
-    /** origin 未变化则跳过；FIXED 模式下 fixedOrigin 改变、FOLLOW_PLAYER 模式下玩家或偏移改变都会触发重同步。 */
-    private static void maybeResyncForOriginChange(Minecraft mc, Map<BlockPos, BlockState> blocks) {
-        BlockPos newOrigin = AxeModeHandler.getEffectiveOrigin(mc);
-        if (newOrigin.equals(lastSyncedOrigin)) {
-            return;
-        }
-        syncToLitematica(blocks, newOrigin);
+    /**
+     * O(1) 更新 placement 的 origin，不重建 schematic。
+     * 计算新旧 origin 的差值，应用到 placement 当前 origin 上。
+     * 用于 FIXED 模式滚轮移动、FOLLOW_PLAYER 模式玩家移动时的预览跟随。
+     */
+    private static void updatePlacementOrigin(BlockPos newOrigin) {
+        SchematicPlacement placement = currentPlacement;
+        if (placement == null || lastSyncedOrigin == null) return;
+        BlockPos delta = newOrigin.subtract(lastSyncedOrigin);
+        if (delta.equals(BlockPos.ZERO)) return;
+        BlockPos newPlacementOrigin = placement.getOrigin().offset(delta);
+        placement.setOrigin(newPlacementOrigin, msg -> {});
+        lastSyncedOrigin = newOrigin;
     }
 
     private static void syncToLitematica(Map<BlockPos, BlockState> blocks, BlockPos origin) {
