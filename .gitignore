@@ -35,7 +35,7 @@ Thumbs.db
 # Local
 *.local
 .env
-
+HANDOVER.md
 # Project local tooling
 .jdk/
 .tmp-malilib/
