@@ -1,5 +1,10 @@
 v0.5.4 - 2025-07-20
 
+[New]
+- 新增 Minecraft 1.21.1 分支（support/1.21.1），基于 support/1.21.11 下调至旧渲染管线
+  依赖：malilib 0.21.10 + litematica 0.19.61 + WorldEdit 7.3.8（mc1.21）+ Fabric API 0.116.14+1.21.1
+  所有 API 签名经 javap 字节码核验，非版本号猜测
+
 [Bug Fix]
 - 修复 //flip 和 //rotate 后粘贴预览未同步更新的问题
 - 新增 transform 引用比较，配合 holder 引用比较完整覆盖 copy/flip/rotate 三种命令

@@ -2,10 +2,10 @@ name: Build
 
 on:
   push:
-    branches: [main, support/1.21.11]
-    tags: ["v*-26.x", "v*-1.21.11"]
+    branches: [main, support/1.21.11, support/1.21.1]
+    tags: ["v*-26.x", "v*-1.21.11", "v*-1.21.1"]
   pull_request:
-    branches: [main, support/1.21.11]
+    branches: [main, support/1.21.11, support/1.21.1]
   workflow_dispatch:
 
 concurrency:
@@ -26,12 +26,14 @@ jobs:
         shell: bash
         run: |
           # 根据 ref（tag 或 branch）判断目标 MC 版本与 Java 版本
-          # tag 形如 refs/tags/v0.5.0-26.x / refs/tags/v0.5.0-1.21.11
-          # branch 形如 refs/heads/main / refs/heads/support/1.21.11
+          # tag 形如 refs/tags/v0.5.0-26.x / refs/tags/v0.5.0-1.21.11 / refs/tags/v0.5.0-1.21.1
+          # branch 形如 refs/heads/main / refs/heads/support/1.21.11 / refs/heads/support/1.21.1
           REF="${GITHUB_REF}"
           if [[ "$REF" == refs/tags/*-26.x ]] || [[ "$REF" == refs/heads/main ]]; then
             echo "java=25" >> "$GITHUB_OUTPUT"
           elif [[ "$REF" == refs/tags/*-1.21.11 ]] || [[ "$REF" == refs/heads/support/1.21.11 ]]; then
+            echo "java=21" >> "$GITHUB_OUTPUT"
+          elif [[ "$REF" == refs/tags/*-1.21.1 ]] || [[ "$REF" == refs/heads/support/1.21.1 ]]; then
             echo "java=21" >> "$GITHUB_OUTPUT"
           else
             # 兜底：从 gradle.properties 读取 minecraft_version 推断
@@ -81,12 +83,13 @@ jobs:
         id: parse
         shell: bash
         run: |
-          # tag 形如 v0.5.0-26.x / v0.5.0-1.21.11
-          # base-version: v0.5.0（去掉 -26.x / -1.21.11 后缀，用作同一个 release 的 tag_name）
+          # tag 形如 v0.5.0-26.x / v0.5.0-1.21.11 / v0.5.0-1.21.1
+          # base-version: v0.5.0（去掉后缀，用作同一个 release 的 tag_name）
           # mc-version:   Modrinth game-versions
-          # jar-suffix:   jar 文件名后缀，便于在同一个 release 中区分两个构建
+          # jar-suffix:   jar 文件名后缀，便于在同一个 release 中区分多个构建
+          # 注意：1.21.11 必须在 1.21.1 之前检查（前者是后者的超集前缀）
           TAG="${GITHUB_REF_NAME}"
-          BASE_VERSION=$(echo "$TAG" | sed -E 's/-(26\.x|1\.21\.11)$//')
+          BASE_VERSION=$(echo "$TAG" | sed -E 's/-(26\.x|1\.21\.11|1\.21\.1)$//')
           if echo "$TAG" | grep -qE -- '-26\.x$'; then
             MC_VERSION="26.2"
             JAR_SUFFIX="26.2"
@@ -95,8 +98,12 @@ jobs:
             MC_VERSION="1.21.11"
             JAR_SUFFIX="1.21.11"
             JAVA_VER="21"
+          elif echo "$TAG" | grep -qE -- '-1\.21\.1$'; then
+            MC_VERSION="1.21.1"
+            JAR_SUFFIX="1.21.1"
+            JAVA_VER="21"
           else
-            echo "Unknown tag format: $TAG (expected v<version>-26.x or v<version>-1.21.11)"
+            echo "Unknown tag format: $TAG (expected v<version>-26.x or v<version>-1.21.11 or v<version>-1.21.1)"
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -202,6 +209,28 @@ jobs:
             fabric-api(required){modrinth:P7dR8mSH}
             malilib@>=0.27.0(required){modrinth:GcWjdA9I}
             litematica@>=0.25.0-(required){modrinth:bEpr0Arc}
+            worldedit(optional){modrinth:1u6JkXh5}
+          java: |
+            21
+          fail-mode: warn
+
+      - name: Publish to Modrinth (1.21.1)
+        if: steps.parse.outputs.mc-version == '1.21.1'
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: "*.jar"
+          name: WeGui ${{ steps.parse.outputs.tag }}
+          version: ${{ steps.parse.outputs.tag }}
+          version-type: release
+          changelog: ${{ steps.changelog.outputs.changelog }}
+          loaders: fabric
+          game-versions: ${{ steps.parse.outputs.mc-version }}
+          dependencies: |
+            fabric-api(required){modrinth:P7dR8mSH}
+            malilib@>=0.21.0(required){modrinth:GcWjdA9I}
+            litematica@>=0.19.50(required){modrinth:bEpr0Arc}
             worldedit(optional){modrinth:1u6JkXh5}
           java: |
             21
