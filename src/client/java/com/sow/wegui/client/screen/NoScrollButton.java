@@ -16,7 +16,7 @@ public class NoScrollButton extends ButtonGeneric {
     }
 
     @Override
-    public boolean onMouseScrolledImpl(double mouseX, double mouseY, double scrollX, double scrollY) {
+    public boolean onMouseScrolledImpl(int mouseX, int mouseY, double scrollX, double scrollY) {
         return false;
     }
 

@@ -7,8 +7,8 @@ import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.gui.GuiTextFieldGeneric;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
-import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.util.StringUtils;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -136,7 +136,7 @@ public class SaveSchematicScreen extends GuiBase {
     }
 
     @Override
-    public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTick) {
+    public void drawContents(GuiGraphics ctx, int mouseX, int mouseY, float partialTick) {
         if (!statusMessage.isEmpty()) {
             this.drawString(ctx, statusMessage, MARGIN_X, this.height - 50, statusColor);
         }

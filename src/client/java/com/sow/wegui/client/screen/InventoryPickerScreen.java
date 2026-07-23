@@ -3,10 +3,9 @@ package com.sow.wegui.client.screen;
 import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.gui.GuiTextFieldGeneric;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
-import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.util.StringUtils;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -56,7 +55,7 @@ public class InventoryPickerScreen extends GuiBase {
     }
 
     @Override
-    public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTick) {
+    public void drawContents(GuiGraphics ctx, int mouseX, int mouseY, float partialTick) {
         Inventory inv = this.mc.player.getInventory();
         String query = getSearchQuery();
 
@@ -94,20 +93,20 @@ public class InventoryPickerScreen extends GuiBase {
         if (hoveredSlot != null) {
             ItemStack stack = inv.getItem(hoveredSlot);
             if (!stack.isEmpty()) {
-                ctx.setTooltipForNextFrame(this.font, stack, mouseX, mouseY);
+                ctx.renderTooltip(this.font, stack, mouseX, mouseY);
             }
         }
     }
 
     @Override
-    public boolean onMouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        if (super.onMouseClicked(event, doubleClick)) {
+    public boolean onMouseClicked(int mouseX, int mouseY, int button) {
+        if (super.onMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
 
-        if (event.button() != 0) return false;
+        if (button != 0) return false;
 
-        int slot = getSlotAt((int) event.x(), (int) event.y());
+        int slot = getSlotAt(mouseX, mouseY);
         if (slot < 0) return false;
 
         Inventory inv = this.mc.player.getInventory();

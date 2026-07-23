@@ -13,10 +13,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -115,14 +119,14 @@ public final class AxeModeHandler {
         // 右键物品/空气：移动 paste 预览模式下禁用 WorldEdit 默认 pos2 行为
         UseItemCallback.EVENT.register((player, level, hand) -> {
             if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
-                return InteractionResult.PASS;
+                return InteractionResultHolder.pass(ItemStack.EMPTY);
             }
 
             if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
-                return InteractionResult.SUCCESS;
+                return InteractionResultHolder.success(ItemStack.EMPTY);
             }
 
-            return InteractionResult.PASS;
+            return InteractionResultHolder.pass(ItemStack.EMPTY);
         });
     }
 
@@ -368,10 +372,9 @@ public final class AxeModeHandler {
             return cachedWandItem;
         }
         try {
-            net.minecraft.resources.Identifier identifier = net.minecraft.resources.Identifier.parse(id);
-            Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(identifier)
-                    .map(ref -> ref.value())
-                    .orElse(null);
+            ResourceLocation rl = ResourceLocation.tryParse(id);
+            Item item = rl != null ? net.minecraft.core.registries.BuiltInRegistries.ITEM.get(rl) : null;
+            if (item == net.minecraft.world.item.Items.AIR) item = null;
             cachedWandItemId = id;
             cachedWandItem = item;
             return item;

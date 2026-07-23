@@ -425,8 +425,8 @@ public final class WeCommands {
 
         List<Option> list = new ArrayList<>();
         try {
-            RegistryAccess.Frozen access = RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
-            Registry<Biome> biomeRegistry = access.lookupOrThrow(Registries.BIOME);
+            @SuppressWarnings("unchecked")
+            Registry<Biome> biomeRegistry = (Registry<Biome>) BuiltInRegistries.REGISTRY.get(Registries.BIOME.location());
             for (Biome biome : biomeRegistry) {
                 String id = biomeRegistry.getKey(biome).toString();
                 list.add(new Option(id, id, id));

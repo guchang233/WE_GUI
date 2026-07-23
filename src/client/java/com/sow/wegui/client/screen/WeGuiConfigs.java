@@ -8,13 +8,12 @@ import fi.dy.masa.malilib.gui.GuiConfigsBase;
 import fi.dy.masa.malilib.gui.button.ButtonBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
-import fi.dy.masa.malilib.gui.interfaces.IConfigGuiAllTab;
 import fi.dy.masa.malilib.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
+public class WeGuiConfigs extends GuiConfigsBase {
     public WeGuiConfigs() {
         super(10, 50, WeGuiMod.MOD_ID, null, "wegui.title.configs");
     }
@@ -73,12 +72,10 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
         return ConfigOptionWrapper.createFor(configs);
     }
 
-    @Override
     public boolean useAllTab() {
         return true;
     }
 
-    @Override
     public List<ConfigOptionWrapper> getAllConfigs() {
         List<ConfigOptionWrapper> configs = new ArrayList<>();
         configs.addAll(ConfigOptionWrapper.createFor(Configs.Generic.OPTIONS));
@@ -138,7 +135,7 @@ public class WeGuiConfigs extends GuiConfigsBase implements IConfigGuiAllTab {
     }
 
     public enum ConfigGuiTab {
-        ALL(IConfigGuiAllTab.getTranslationKey()),
+        ALL("malilib.gui.button.config.gui.tab.all"),
         GENERIC("wegui.config.tab.generic"),
         STATUS_BAR("wegui.config.tab.status_bar"),
         PASTE_PREVIEW("wegui.config.tab.paste_preview"),

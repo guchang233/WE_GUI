@@ -7,11 +7,9 @@ import com.sow.wegui.commands.WeCommands.Command;
 import com.sow.wegui.commands.WeCommands.Usage;
 import com.sow.wegui.config.Configs;
 import fi.dy.masa.malilib.gui.GuiBase;
-import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.render.RenderUtils;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
@@ -138,7 +136,7 @@ public class RadialMenuScreen extends GuiBase {
     }
 
     @Override
-    public void drawScreenBackground(GuiContext ctx, int mouseX, int mouseY) {
+    public void drawScreenBackground(GuiGraphics ctx, int mouseX, int mouseY) {
         // 透明背景
     }
 
@@ -151,14 +149,15 @@ public class RadialMenuScreen extends GuiBase {
     }
 
     @Override
-    public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTick) {
+    public void drawContents(GuiGraphics ctx, int mouseX, int mouseY, float partialTick) {
         List<Command> pageCmds = getPageCommands();
         hoveredSegment = getHoveredSegment(mouseX, mouseY, pageCmds);
 
         if (commands.isEmpty()) {
             String msg = cachedEmptyHint;
             int textWidth = this.font.width(msg);
-            RenderUtils.drawOutlinedBox(ctx, centerX - textWidth / 2 - 10, centerY - 14, textWidth + 20, 28, COLOR_PAGE_BG, COLOR_DIVIDER);
+            ctx.fill(centerX - textWidth / 2 - 10, centerY - 14, centerX - textWidth / 2 - 10 + textWidth + 20, centerY - 14 + 28, COLOR_PAGE_BG);
+            ctx.renderOutline(centerX - textWidth / 2 - 10, centerY - 14, textWidth + 20, 28, COLOR_DIVIDER);
             ctx.drawString(this.font, msg, centerX - textWidth / 2, centerY - 4, COLOR_TEXT, false);
             return;
         }
@@ -248,25 +247,26 @@ public class RadialMenuScreen extends GuiBase {
             int pw = this.font.width(pageStr);
             int px = centerX - pw / 2;
             int py = centerY + outerRadius + 10;
-            RenderUtils.drawOutlinedBox(ctx, px - 8, py - 3, pw + 16, 16, COLOR_PAGE_BG, COLOR_PAGE_EDGE);
+            ctx.fill(px - 8, py - 3, px - 8 + pw + 16, py - 3 + 16, COLOR_PAGE_BG);
+            ctx.renderOutline(px - 8, py - 3, pw + 16, 16, COLOR_PAGE_EDGE);
             ctx.drawString(this.font, pageStr, px, py + 1, COLOR_PAGE_TEXT, false);
         }
     }
 
     @Override
-    public boolean onMouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        if (super.onMouseClicked(event, doubleClick)) {
+    public boolean onMouseClicked(int mouseX, int mouseY, int button) {
+        if (super.onMouseClicked(mouseX, mouseY, button)) {
             return true;
         }
-        if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             List<Command> pageCmds = getPageCommands();
-            int idx = getHoveredSegment((int) event.x(), (int) event.y(), pageCmds);
+            int idx = getHoveredSegment(mouseX, mouseY, pageCmds);
             if (idx >= 0 && idx < pageCmds.size()) {
                 executeCommand(pageCmds.get(idx));
                 return true;
             }
         }
-        if (event.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
             this.mc.setScreen(null);
             return true;
         }
@@ -274,14 +274,14 @@ public class RadialMenuScreen extends GuiBase {
     }
 
     @Override
-    public boolean onMouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean onMouseScrolled(int mouseX, int mouseY, double deltaX, double deltaY) {
         if (totalPages <= 1) return false;
         long now = System.currentTimeMillis();
         if (now - lastScrollTime < SCROLL_THROTTLE_MS) {
             return true; // 节流期内消费事件但不切页
         }
         lastScrollTime = now;
-        if (verticalAmount < 0) {
+        if (deltaY < 0) {
             currentPage = (currentPage + 1) % totalPages;
         } else {
             currentPage = (currentPage - 1 + totalPages) % totalPages;
@@ -290,12 +290,12 @@ public class RadialMenuScreen extends GuiBase {
     }
 
     @Override
-    public boolean keyPressed(KeyEvent event) {
-        if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
+    public boolean onKeyTyped(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             this.mc.setScreen(null);
             return true;
         }
-        return super.keyPressed(event);
+        return super.onKeyTyped(keyCode, scanCode, modifiers);
     }
 
     private void executeCommand(Command cmd) {
@@ -333,7 +333,7 @@ public class RadialMenuScreen extends GuiBase {
      * 绘制扇区段。构建扇区多边形（外圆弧 + 内圆弧），用 fillPolygon 填充。
      * 使用实例字段 sectorVertX/Y 避免数组分配。
      */
-    private void drawPieSegmentAA(GuiContext ctx, int cx, int cy, int innerR, int outerR,
+    private void drawPieSegmentAA(GuiGraphics ctx, int cx, int cy, int innerR, int outerR,
                                   double startAngle, double endAngle, int color) {
         int totalVerts = (ARC_STEPS + 1) * 2;
         int idx = 0;
@@ -357,12 +357,12 @@ public class RadialMenuScreen extends GuiBase {
     }
 
     /** 填充圆 */
-    private void drawFilledCircleAA(GuiContext ctx, int cx, int cy, int radius, int color) {
+    private void drawFilledCircleAA(GuiGraphics ctx, int cx, int cy, int radius, int color) {
         fillPolygon(ctx, cx, cy, innerFilledVertX, innerFilledVertY, innerFilledVertX.length, color);
     }
 
     /** 圆形描边：使用预计算的圆环顶点 */
-    private void drawCircleOutlineAA(GuiContext ctx, int cx, int cy, int radius, int color) {
+    private void drawCircleOutlineAA(GuiGraphics ctx, int cx, int cy, int radius, int color) {
         double[] vx = (radius == outerRadius) ? outerRingVertX : innerRingVertX;
         double[] vy = (radius == outerRadius) ? outerRingVertY : innerRingVertY;
         fillPolygon(ctx, cx, cy, vx, vy, vx.length, color);
@@ -372,7 +372,7 @@ public class RadialMenuScreen extends GuiBase {
      * 绘制弧线边缘：构建完整弧形带状多边形（外弧 + 内弧），用 fillPolygon 填充。
      * 消除分段矩形的间隙问题。
      */
-    private void drawArcEdgeAA(GuiContext ctx, int cx, int cy, int radius,
+    private void drawArcEdgeAA(GuiGraphics ctx, int cx, int cy, int radius,
                                double startAngle, double endAngle, int color) {
         int totalVerts = (ARC_STEPS + 1) * 2;
         int idx = 0;
@@ -397,7 +397,7 @@ public class RadialMenuScreen extends GuiBase {
     }
 
     /** 径向线 */
-    private void drawRadialLineAA(GuiContext ctx, int cx, int cy, int innerR, int outerR,
+    private void drawRadialLineAA(GuiGraphics ctx, int cx, int cy, int innerR, int outerR,
                                   double angle, int color) {
         double x1 = innerR * Math.cos(angle);
         double y1 = innerR * Math.sin(angle);
@@ -407,7 +407,7 @@ public class RadialMenuScreen extends GuiBase {
     }
 
     /** 绘制线段（扩展为宽度 1.5 的矩形条，使用实例字段数组） */
-    private void drawLineSegment(GuiContext ctx, int cx, int cy,
+    private void drawLineSegment(GuiGraphics ctx, int cx, int cy,
                                  double x1, double y1, double x2, double y2, int color) {
         double dx = x2 - x1;
         double dy = y2 - y1;
@@ -428,7 +428,7 @@ public class RadialMenuScreen extends GuiBase {
      * 多边形扫描线填充。对每行计算多边形边与水平线的交点，配对后用 fill 绘制。
      * 使用实例字段 crossingsBuffer 避免每次分配。
      */
-    private void fillPolygon(GuiContext ctx, int cx, int cy,
+    private void fillPolygon(GuiGraphics ctx, int cx, int cy,
                              double[] vertX, double[] vertY, int nVerts, int color) {
         double yMin = vertY[0], yMax = vertY[0];
         for (int i = 1; i < nVerts; i++) {

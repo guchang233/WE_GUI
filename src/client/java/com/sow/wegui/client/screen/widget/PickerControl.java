@@ -36,7 +36,7 @@ public class PickerControl implements IParamControl {
         int totalBtnWidth = BTN_WIDTH * btnCount + GAP * (btnCount - 1);
         int fieldW = w - totalBtnWidth - GAP;
 
-        GuiTextFieldGeneric field = new GuiTextFieldGeneric(x, y, fieldW, 18, screen.font);
+        GuiTextFieldGeneric field = new GuiTextFieldGeneric(x, y, fieldW, 18, screen.textRenderer);
         String def = param.defaultValue() == null ? "" : param.defaultValue();
         field.setValue(def);
         if (param.hint() != null && !param.hint().isBlank()) {
@@ -49,8 +49,8 @@ public class PickerControl implements IParamControl {
         if (isPatternOrMask) {
             ButtonGeneric pick = new ButtonGeneric(bx, y, BTN_WIDTH, 18, StringUtils.translate("wegui.picker.button"));
             screen.addButton(pick, (btn, mouseButton) -> screen.mc.setScreen(new InventoryPickerScreen(screen, id -> {
-                wrapper.textField().setValue(id);
-                wrapper.textField().setCursorPosition(id.length());
+                wrapper.getTextField().setValue(id);
+                wrapper.getTextField().setCursorPosition(id.length());
             })));
             bx += BTN_WIDTH + GAP;
         }
@@ -61,20 +61,20 @@ public class PickerControl implements IParamControl {
             List<Option> pickerOptions = isPatternOrMask ? options : this.options;
             screen.addButton(suggest, (btn, mouseButton) -> screen.mc.setScreen(new OptionPickerScreen(
                     screen, param.name(), pickerOptions, StringUtils.translate("wegui.picker.search"), opt -> {
-                wrapper.textField().setValue(opt.value());
-                wrapper.textField().setCursorPosition(opt.value().length());
+                wrapper.getTextField().setValue(opt.value());
+                wrapper.getTextField().setCursorPosition(opt.value().length());
             })));
         }
     }
 
     @Override
     public String getValue() {
-        return wrapper.textField().getValue();
+        return wrapper.getTextField().getValue();
     }
 
     @Override
     public void setValue(String value) {
-        wrapper.textField().setValue(value == null ? "" : value);
+        wrapper.getTextField().setValue(value == null ? "" : value);
     }
 
     @Override
@@ -85,6 +85,6 @@ public class PickerControl implements IParamControl {
 
     @Override
     public void setFocused(boolean focused) {
-        wrapper.textField().setFocused(focused);
+        wrapper.getTextField().setFocused(focused);
     }
 }

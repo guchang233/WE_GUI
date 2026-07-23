@@ -59,7 +59,7 @@ public final class SchematicExporter {
         try {
             Files.createDirectories(dir);
             if (format == Format.LITEMATIC) {
-                boolean ok = schematic.writeToFile(dir, fileName, true);
+                boolean ok = schematic.writeToFile(dir.toFile(), fileName, true);
                 if (ok) {
                     WeGuiMod.LOGGER.info("[WeGui] 原理图已保存为 litematic: {}/{}", dir, fileName);
                 }

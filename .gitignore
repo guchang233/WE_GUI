@@ -26,9 +26,6 @@ Thumbs.db
 *.war
 *.ear
 !gradle/wrapper/gradle-wrapper.jar
-# 例外：libs/ 下的本地依赖 jar 需要随仓库发布（如 litematica 1.21.11 未发布到 maven）
-!libs/
-!libs/*.jar
 
 # Logs
 *.log

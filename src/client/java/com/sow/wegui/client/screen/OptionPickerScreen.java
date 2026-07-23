@@ -5,8 +5,8 @@ import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.gui.GuiTextFieldGeneric;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
-import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.util.StringUtils;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -125,18 +125,18 @@ public class OptionPickerScreen extends GuiBase {
     }
 
     @Override
-    public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTick) {
+    public void drawContents(GuiGraphics ctx, int mouseX, int mouseY, float partialTick) {
         // 控件自行渲染
     }
 
     @Override
-    public boolean onMouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean onMouseScrolled(int mouseX, int mouseY, double deltaX, double deltaY) {
         int maxVisible = Math.max(6, (this.height - TOP - 40) / ROW_HEIGHT);
         int total = filtered.size();
         if (total <= maxVisible) return false;
         int maxStart = total - maxVisible;
-        // 向上滚（verticalAmount > 0）查看下方内容
-        scrollOffset -= (int) verticalAmount;
+        // 向上滚（deltaY > 0）查看下方内容
+        scrollOffset -= (int) deltaY;
         if (scrollOffset < 0) scrollOffset = 0;
         if (scrollOffset > maxStart) scrollOffset = maxStart;
         rebuildOptionButtons();

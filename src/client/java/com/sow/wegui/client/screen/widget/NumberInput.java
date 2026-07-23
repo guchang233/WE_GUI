@@ -22,7 +22,7 @@ public class NumberInput implements IParamControl {
         int gap = 2;
         int fieldW = w - btnW * 2 - gap * 2;
 
-        GuiTextFieldGeneric field = new GuiTextFieldGeneric(x + btnW + gap, y, fieldW, 18, screen.font);
+        GuiTextFieldGeneric field = new GuiTextFieldGeneric(x + btnW + gap, y, fieldW, 18, screen.textRenderer);
         String def = param.defaultValue() == null ? "" : param.defaultValue();
         field.setValue(def);
         if (param.hint() != null && !param.hint().isBlank()) {
@@ -51,9 +51,9 @@ public class NumberInput implements IParamControl {
         try {
             double val = Double.parseDouble(getValue().trim());
             double next = integer ? (int) val + delta * step : val + delta * step;
-            wrapper.textField().setValue(format(next));
+            wrapper.getTextField().setValue(format(next));
         } catch (NumberFormatException e) {
-            wrapper.textField().setValue(integer ? "0" : "0.0");
+            wrapper.getTextField().setValue(integer ? "0" : "0.0");
         }
     }
 
@@ -65,12 +65,12 @@ public class NumberInput implements IParamControl {
 
     @Override
     public String getValue() {
-        return wrapper.textField().getValue();
+        return wrapper.getTextField().getValue();
     }
 
     @Override
     public void setValue(String value) {
-        wrapper.textField().setValue(value == null ? "" : value);
+        wrapper.getTextField().setValue(value == null ? "" : value);
     }
 
     @Override
@@ -90,6 +90,6 @@ public class NumberInput implements IParamControl {
 
     @Override
     public void setFocused(boolean focused) {
-        wrapper.textField().setFocused(focused);
+        wrapper.getTextField().setFocused(focused);
     }
 }

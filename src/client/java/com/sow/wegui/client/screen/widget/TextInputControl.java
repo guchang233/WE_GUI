@@ -13,7 +13,7 @@ public class TextInputControl implements IParamControl {
     private final TextFieldWrapper<GuiTextFieldGeneric> wrapper;
 
     public TextInputControl(GuiBase screen, int x, int y, int w, WeCommands.Param param) {
-        GuiTextFieldGeneric field = new GuiTextFieldGeneric(x, y, w, 18, screen.font);
+        GuiTextFieldGeneric field = new GuiTextFieldGeneric(x, y, w, 18, screen.textRenderer);
         String def = param.defaultValue() == null ? "" : param.defaultValue();
         field.setValue(def);
         if (param.hint() != null && !param.hint().isBlank()) {
@@ -25,12 +25,12 @@ public class TextInputControl implements IParamControl {
 
     @Override
     public String getValue() {
-        return wrapper.textField().getValue();
+        return wrapper.getTextField().getValue();
     }
 
     @Override
     public void setValue(String value) {
-        wrapper.textField().setValue(value == null ? "" : value);
+        wrapper.getTextField().setValue(value == null ? "" : value);
     }
 
     @Override
@@ -44,6 +44,6 @@ public class TextInputControl implements IParamControl {
 
     @Override
     public void setFocused(boolean focused) {
-        wrapper.textField().setFocused(focused);
+        wrapper.getTextField().setFocused(focused);
     }
 }

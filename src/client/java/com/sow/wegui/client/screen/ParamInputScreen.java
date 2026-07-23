@@ -10,10 +10,9 @@ import com.sow.wegui.client.screen.widget.ParamControlFactory;
 import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
-import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.util.StringUtils;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.KeyEvent;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -209,7 +208,7 @@ public class ParamInputScreen extends GuiBase {
     }
 
     @Override
-    public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTick) {
+    public void drawContents(GuiGraphics ctx, int mouseX, int mouseY, float partialTick) {
         int y = CONTENT_TOP;
         for (String line : headerLines) {
             this.drawString(ctx, line, MARGIN_X, y, 0xFFFFFFFF);
@@ -241,8 +240,8 @@ public class ParamInputScreen extends GuiBase {
     }
 
     @Override
-    public boolean keyPressed(KeyEvent event) {
-        if (event.key() == GLFW.GLFW_KEY_TAB && !rows.isEmpty()) {
+    public boolean onKeyTyped(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_TAB && !rows.isEmpty()) {
             boolean shift = GuiBase.isShiftDown();
             if (focusedIndex >= 0 && focusedIndex < rows.size()) {
                 rows.get(focusedIndex).control.setFocused(false);
@@ -257,7 +256,7 @@ public class ParamInputScreen extends GuiBase {
             rows.get(focusedIndex).control.setFocused(true);
             return true;
         }
-        return super.keyPressed(event);
+        return super.onKeyTyped(keyCode, scanCode, modifiers);
     }
 
     private List<String> splitLines(String text, int maxWidth) {

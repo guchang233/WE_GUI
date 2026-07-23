@@ -1,6 +1,5 @@
 package com.sow.wegui.client;
 
-import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.sow.wegui.WeGuiMod;
 import com.sow.wegui.config.Configs;
 import com.sk89q.worldedit.math.transform.Transform;
@@ -15,14 +14,10 @@ import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.malilib.event.RenderEventHandler;
 import fi.dy.masa.malilib.interfaces.IRenderer;
 import fi.dy.masa.malilib.render.RenderUtils;
-import fi.dy.masa.malilib.util.data.Color4f;
-import net.minecraft.client.Camera;
+import fi.dy.masa.malilib.util.Color4f;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.RenderBuffers;
-import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
-import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.level.block.state.BlockState;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -37,8 +32,10 @@ import java.util.Map;
  * - 剪贴板：通过 SchematicPlacementManager 注入 placement，Litematica 自动渲染 ghost blocks 与 mismatch
  * - 选区框：在 malilib onRenderWorldLastAdvanced 中调用 OverlayRenderer.renderSelectionBox
  *
- * 1.21.11 适配：malilib 0.27.x 的 IRenderer 接口方法为 onRenderWorldLastAdvanced，
- * 签名 (RenderTarget, Matrix4f posMatrix, Matrix4f projMatrix, Frustum, Camera, RenderBuffers, ProfilerFiller)。
+ * 1.21.1 适配：malilib 0.21.10 的 IRenderer 接口方法为 onRenderWorldLast，
+ * 签名 (Matrix4f posMatrix, Matrix4f projMatrix)。
+ * litematica 0.19.61 的 OverlayRenderer.BoxType 为 package-private 无法外部访问，
+ * 因此直接调用 malilib 公开的 RenderUtils.renderAreaOutline + renderBlockOutline。
  */
 public final class LitematicaBridge {
     private static final String WEGUI_PLACEMENT_NAME = "WeGui Clipboard Sync";
@@ -96,7 +93,7 @@ public final class LitematicaBridge {
         }
         try {
             java.nio.file.Files.createDirectories(dir);
-            boolean ok = schematic.writeToFile(dir, fileName, true);
+            boolean ok = schematic.writeToFile(dir.toFile(), fileName, true);
             if (ok) {
                 WeGuiMod.LOGGER.info("[WeGui] 原理图已保存: {}/{}", dir, fileName);
             } else {
@@ -257,8 +254,8 @@ public final class LitematicaBridge {
     }
 
     /** 用 malilib RenderUtils 渲染 WE 选区框：三轴颜色的区域轮廓 + 两个角点方块边框。
-     * 1.21.11 适配：litematica 0.25.0 的 OverlayRenderer.BoxType 是 package-private，
-     * 无法从外部包访问，因此直接调用 malilib 公开的 RenderUtils.renderAreaOutline + renderBlockOutline。
+     * 1.21.1 适配：malilib 0.21.10 的 RenderUtils.renderAreaOutline/renderBlockOutline
+     * 需要额外传入 Minecraft 参数，使用 util.Color4f（非 util.data.Color4f）。
      * 参数语义（与 Litematica OverlayRenderer.renderSelectionBox AREA_SELECTED 分支保持一致）：
      *   - 区域轮廓线宽 1.5f，三轴颜色 X=红/Y=绿/Z=蓝
      *   - 角点方块边框 expand=0.001f（避免 Z-fighting），线宽 2.0f，白色 */
@@ -269,9 +266,7 @@ public final class LitematicaBridge {
         private static final Color4f COLOR_CORNER = new Color4f(1.0f, 1.0f, 1.0f);
 
         @Override
-        public void onRenderWorldLastAdvanced(RenderTarget target, Matrix4f posMatrix, Matrix4f projMatrix,
-                                              Frustum frustum, Camera camera, RenderBuffers buffers,
-                                              ProfilerFiller profiler) {
+        public void onRenderWorldLast(Matrix4f posMatrix, Matrix4f projMatrix) {
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null || mc.level == null) return;
             if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) return;
@@ -285,10 +280,10 @@ public final class LitematicaBridge {
             BlockPos pos2 = corners.pos2() != null ? corners.pos2() : pos1;
 
             // 区域轮廓（三轴颜色，与 Litematica AREA_SELECTED 行为一致）
-            RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
+            RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z, mc);
             // 两个角点方块边框
-            RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER);
-            RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER);
+            RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, mc);
+            RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, mc);
         }
     }
 }

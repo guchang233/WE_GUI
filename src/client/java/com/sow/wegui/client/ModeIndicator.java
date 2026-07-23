@@ -88,9 +88,9 @@ public final class ModeIndicator {
         int x = offsetX;
         int y = mc.getWindow().getGuiScaledHeight() - (int) (panelH * scale) - offsetY;
 
-        g.pose().pushMatrix();
-        g.pose().translate(x, y);
-        g.pose().scale(scale, scale);
+        g.pose().pushPose();
+        g.pose().translate(x, y, 0);
+        g.pose().scale(scale, scale, 1);
 
         g.fill(0, 0, panelW, panelH, 0xCC000000);
         g.renderOutline(0, 0, panelW, panelH, 0xFF444444);
@@ -106,6 +106,6 @@ public final class ModeIndicator {
             textY += lineHeight + 1;
         }
 
-        g.pose().popMatrix();
+        g.pose().popPose();
     }
 }

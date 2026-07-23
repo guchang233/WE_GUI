@@ -27,14 +27,14 @@ public class ClientPacketListenerMixin {
             Pattern.compile("Second position set to .*")
     );
 
-    @Inject(method = {"handleSystemChat", "m_246046_"}, at = @At("HEAD"), cancellable = true)
+    @Inject(method = "handleSystemChat", at = @At("HEAD"), cancellable = true)
     private void wegui$onSystemChat(ClientboundSystemChatPacket packet, CallbackInfo ci) {
         if (shouldFilter(packet.content())) {
             ci.cancel();
         }
     }
 
-    @Inject(method = {"setActionBarText", "m_246039_"}, at = @At("HEAD"), cancellable = true)
+    @Inject(method = "setActionBarText", at = @At("HEAD"), cancellable = true)
     private void wegui$onActionBar(ClientboundSetActionBarTextPacket packet, CallbackInfo ci) {
         if (shouldFilter(packet.text())) {
             ci.cancel();

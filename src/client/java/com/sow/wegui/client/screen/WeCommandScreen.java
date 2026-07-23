@@ -11,10 +11,9 @@ import fi.dy.masa.malilib.gui.GuiListBase;
 import fi.dy.masa.malilib.gui.GuiTextFieldGeneric;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.interfaces.ISelectionListener;
-import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.util.StringUtils;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
@@ -275,7 +274,7 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
     }
 
     @Override
-    public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTick) {
+    public void drawContents(GuiGraphics ctx, int mouseX, int mouseY, float partialTick) {
         this.drawSearchBackground(ctx);
         this.drawSearchHint(ctx);
         if (this.getListWidget() != null) {
@@ -285,12 +284,12 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
     }
 
     @Override
-    public void drawScreenBackground(GuiContext ctx, int mouseX, int mouseY) {
+    public void drawScreenBackground(GuiGraphics ctx, int mouseX, int mouseY) {
         super.drawScreenBackground(ctx, mouseX, mouseY);
         this.drawCategoryBackground(ctx);
     }
 
-    private void drawSearchBackground(GuiContext ctx) {
+    private void drawSearchBackground(GuiGraphics ctx) {
         if (searchField == null) return;
         int x = PADDING + SIDE_BAR_WIDTH;
         int y = 12;
@@ -298,7 +297,7 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
         ctx.fill(x - 1, y - 1, x + w + 1, y + 19, 0xFF000000);
     }
 
-    private void drawSearchHint(GuiContext ctx) {
+    private void drawSearchHint(GuiGraphics ctx) {
         if (searchField == null) return;
         if (!searchField.getValue().isEmpty() || searchField.isFocused()) return;
         int x = PADDING + SIDE_BAR_WIDTH + 4;
@@ -306,7 +305,7 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
         ctx.drawString(this.font, StringUtils.translate("wegui.command.search_hint"), x, y, 0xFF888888, false);
     }
 
-    private void drawCategoryBackground(GuiContext ctx) {
+    private void drawCategoryBackground(GuiGraphics ctx) {
         int x = PADDING;
         int y = TOP_BAR_HEIGHT;
         int width = SIDE_BAR_WIDTH - 10;
@@ -314,7 +313,7 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
         ctx.fill(x, y, x + width, y + height, 0x90000000);
     }
 
-    private void drawCategoryScrollbar(GuiContext ctx) {
+    private void drawCategoryScrollbar(GuiGraphics ctx) {
         if (categoryMaxScroll <= 0) {
             return;
         }
@@ -360,41 +359,41 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
     }
 
     @Override
-    public boolean onMouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean onMouseScrolled(int mouseX, int mouseY, double deltaX, double deltaY) {
         int visibleTop = TOP_BAR_HEIGHT;
         int visibleBottom = this.height - BOTTOM_BAR_HEIGHT;
         if (mouseX >= PADDING && mouseX < PADDING + SIDE_BAR_WIDTH &&
             mouseY >= visibleTop && mouseY < visibleBottom) {
-            categoryScrollOffset -= (int) verticalAmount * CATEGORY_ENTRY_HEIGHT;
+            categoryScrollOffset -= (int) deltaY * CATEGORY_ENTRY_HEIGHT;
             updateCategoryButtonPositions();
             return true;
         }
-        return super.onMouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        return super.onMouseScrolled(mouseX, mouseY, deltaX, deltaY);
     }
 
     @Override
-    public boolean onMouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && isInScrollbarTrack(event.x(), event.y())) {
+    public boolean onMouseClicked(int mouseX, int mouseY, int button) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && isInScrollbarTrack(mouseX, mouseY)) {
             int[] geo = getScrollbarThumbGeometry();
             if (geo == null) {
-                return super.onMouseClicked(event, doubleClick);
+                return super.onMouseClicked(mouseX, mouseY, button);
             }
             int thumbY = geo[0];
             int thumbH = geo[1];
             int trackY = geo[2];
             int availableHeight = geo[3];
-            if (event.y() >= thumbY && event.y() < thumbY + thumbH) {
+            if (mouseY >= thumbY && mouseY < thumbY + thumbH) {
                 // 点击落在 thumb 上：记录偏移
-                scrollbarDragOffset = event.y() - thumbY;
+                scrollbarDragOffset = mouseY - thumbY;
             } else {
                 // 点击落在 track 上：跳转 thumb 使其中心对齐 mouseY
                 scrollbarDragOffset = thumbH / 2.0;
-                updateScrollFromThumbY(event.y() - scrollbarDragOffset, thumbH, trackY, availableHeight);
+                updateScrollFromThumbY(mouseY - scrollbarDragOffset, thumbH, trackY, availableHeight);
             }
             scrollbarDragging = true;
             return true;
         }
-        return super.onMouseClicked(event, doubleClick);
+        return super.onMouseClicked(mouseX, mouseY, button);
     }
 
     private void updateScrollFromThumbY(double newThumbY, int thumbH, int trackY, int availableHeight) {
@@ -410,26 +409,26 @@ public class WeCommandScreen extends GuiListBase<CommandRow, WidgetCommandEntry,
     }
 
     @Override
-    public boolean onMouseDragged(MouseButtonEvent event, double deltaX, double deltaY) {
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (scrollbarDragging) {
             int[] geo = getScrollbarThumbGeometry();
             if (geo == null) return true;
             int thumbH = geo[1];
             int trackY = geo[2];
             int availableHeight = geo[3];
-            updateScrollFromThumbY(event.y() - scrollbarDragOffset, thumbH, trackY, availableHeight);
+            updateScrollFromThumbY(mouseY - scrollbarDragOffset, thumbH, trackY, availableHeight);
             return true;
         }
-        return super.onMouseDragged(event, deltaX, deltaY);
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     @Override
-    public boolean onMouseReleased(MouseButtonEvent event) {
+    public boolean onMouseReleased(int mouseX, int mouseY, int button) {
         if (scrollbarDragging) {
             scrollbarDragging = false;
             return true;
         }
-        return super.onMouseReleased(event);
+        return super.onMouseReleased(mouseX, mouseY, button);
     }
 
     @Override

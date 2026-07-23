@@ -7,7 +7,6 @@ import com.sow.wegui.config.Configs;
 import fi.dy.masa.malilib.hotkeys.*;
 import fi.dy.masa.malilib.util.GuiUtils;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.input.KeyEvent;
 
 public class InputHandler implements IKeybindProvider, IKeyboardInputHandler {
     private static final InputHandler INSTANCE = new InputHandler();
@@ -43,14 +42,14 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler {
     }
 
     @Override
-    public boolean onKeyInput(KeyEvent input, boolean eventKeyState) {
+    public boolean onKeyInput(int keyCode, int scanCode, int modifiers, boolean eventKeyState) {
         if (eventKeyState) {
             Minecraft mc = Minecraft.getInstance();
-            if (Configs.Hotkeys.OPEN_GUI.getKeybind().matches(input.key())) {
+            if (Configs.Hotkeys.OPEN_GUI.getKeybind().matches(keyCode)) {
                 openMainPanel(mc);
                 return true;
             }
-            if (Configs.Hotkeys.OPEN_RADIAL.getKeybind().matches(input.key())) {
+            if (Configs.Hotkeys.OPEN_RADIAL.getKeybind().matches(keyCode)) {
                 openRadialMenu(mc);
                 return true;
             }
