@@ -255,21 +255,24 @@ public final class LitematicaBridge {
         }
     }
 
-    /** 用 malilib RenderUtils 渲染 WE 选区框：三轴颜色的区域轮廓 + 两个角点方块边框。
-     * 1.21.1 适配：malilib 0.21.10 的 RenderUtils.renderAreaOutline/renderBlockOutline
-     * 需要额外传入 Minecraft 参数，使用 util.Color4f（非 util.data.Color4f）。
+    /** 用 malilib RenderUtils 渲染 WE 选区框：三轴颜色的区域轮廓 + 半透明侧面 + 两个角点方块边框。
+     * 1.21.1 适配：malilib 0.21.10 的 RenderUtils.renderAreaOutline/renderBlockOutline/renderAreaSides
+     * 需要额外传入 Minecraft 参数（renderAreaSides 还需 Matrix4f），使用 util.Color4f（非 util.data.Color4f）。
      * 参数语义（与 Litematica OverlayRenderer.renderSelectionBox AREA_SELECTED 分支保持一致）：
      *   - 区域轮廓线宽 1.5f，三轴颜色 X=红/Y=绿/Z=蓝
+     *   - 半透明侧面 alpha=0.4，白色
      *   - 角点方块边框 expand=0.001f（避免 Z-fighting），线宽 2.0f，白色
      *
      * 边框透视（selectionBoxThroughView）：
-     *   - malilib 0.21.10 renderBlockOutline 无 throughView 参数，通过 GL11 控制 depth test 切换透视。
-     *   - 0.21.10 用老式 RenderSystem，不会覆盖 GL 状态，GL11 调用有效。 */
+     *   - malilib 0.21.10 无 throughView 参数，通过 RenderSystem 控制 depth test 切换透视。
+     *   - malilib 内部 RenderType 可能覆盖 depth test 状态，每次调用前重新设置。 */
     private static final class WeSelectionRenderer implements IRenderer {
         private static final Color4f COLOR_X = new Color4f(1.0f, 0.0625f, 0.0625f);
         private static final Color4f COLOR_Y = new Color4f(0.0625f, 1.0f, 0.0625f);
         private static final Color4f COLOR_Z = new Color4f(0.0625f, 0.0625f, 1.0f);
         private static final Color4f COLOR_CORNER = new Color4f(1.0f, 1.0f, 1.0f);
+        // 侧面半透明白色（与 Litematica AREA_SELECTED 的 colorArea + alpha 0.4 一致）
+        private static final Color4f COLOR_AREA_SIDES = new Color4f(1.0f, 1.0f, 1.0f, 0.4f);
 
         @Override
         public void onRenderWorldLast(Matrix4f posMatrix, Matrix4f projMatrix) {
@@ -287,31 +290,59 @@ public final class LitematicaBridge {
             // 两点都未设：无选区可渲染
             if (!hasPos1 && !hasPos2) return;
 
-            // 边框透视：true=禁用 depth test（线穿过方块可见），false=启用 depth test（被方块遮挡，默认）
-            // 0.21.10 不覆盖 GL 状态，渲染前后显式切换 depth test 即可控制透视。
+            // 边框透视：true=禁用 depth test（穿过方块可见），false=启用 depth test（被方块遮挡，默认）
             boolean throughView = Configs.Generic.SELECTION_BOX_THROUGH_VIEW.getBooleanValue();
-            if (throughView) {
-                org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
-            }
 
             try {
                 if (hasPos1 != hasPos2) {
                     // 只设了一个点：只渲染该点的单方块白色边框，不画区域轮廓
                     BlockPos only = hasPos1 ? pos1 : pos2;
+                    applyDepthTest(throughView);
                     RenderUtils.renderBlockOutline(only, 0.001f, 2.0f, COLOR_CORNER, mc);
                 } else {
-                    // 两点都已设：渲染完整长方体选区（区域轮廓 + 两个角点方块边框）
-                    RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z, mc);
-                    RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, mc);
-                    RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, mc);
+                    // 两点都已设：渲染完整长方体选区（半透明侧面 + 区域轮廓 + 两个角点方块边框）
+
+                    // 1. 半透明侧面（throughView=true 透视，false 不透视）
+                    applyDepthTest(throughView);
+                    try {
+                        RenderUtils.renderAreaSides(pos1, pos2, COLOR_AREA_SIDES, posMatrix, mc);
+                    } catch (Throwable ex) {
+                        WeGuiMod.LOGGER.error("[WeGui] renderAreaSides failed", ex);
+                    }
+
+                    // 2. 区域轮廓（malilib 内部可能覆盖 depth test，每次调用前重新设置）
+                    applyDepthTest(throughView);
+                    try {
+                        RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z, mc);
+                    } catch (Throwable ex) {
+                        WeGuiMod.LOGGER.error("[WeGui] renderAreaOutline failed", ex);
+                    }
+
+                    // 3. 角点方块边框
+                    applyDepthTest(throughView);
+                    try {
+                        RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, mc);
+                        RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, mc);
+                    } catch (Throwable ex) {
+                        WeGuiMod.LOGGER.error("[WeGui] renderBlockOutline failed", ex);
+                    }
                 }
             } catch (Throwable ex) {
                 WeGuiMod.LOGGER.error("[WeGui] selection box render failed", ex);
             } finally {
-                // 恢复 depth test 到默认 enabled 状态，避免影响后续渲染
-                if (throughView) {
-                    org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
-                }
+                // 恢复 depth test 到默认启用状态，避免影响后续渲染
+                com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
+            }
+        }
+
+        /** 根据 throughView 设置 depth test：true=禁用（透视），false=启用（不透视）。
+         *  用 RenderSystem 替代 GL11，与 Minecraft 1.21.1 的 RenderSystem 状态管理一致，
+         *  避免与 malilib 内部 RenderType 的 depth test 配置冲突。 */
+        private static void applyDepthTest(boolean throughView) {
+            if (throughView) {
+                com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
+            } else {
+                com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
             }
         }
     }
