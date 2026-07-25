@@ -1,0 +1,27 @@
+v0.5.5 - 2025-07-25
+
+[Feature]
+- 选区边框深度测试默认开启，避免被世界方块遮挡
+- 选区边框透视模式可配置（selectionBoxThroughView）
+- 木斧首个模式改为放置模式，右键方块即可放置粘贴预览
+- 选区框新增半透明侧面渲染，区域轮廓三轴颜色（X 红/Y 绿/Z 蓝）
+
+[Bug Fix]
+- 修复 //flip 和 //rotate 后粘贴预览未同步更新的问题（新增 transform 引用比较）
+- 修复放置模式下左右键仍触发 WE 选区的问题（FAIL 阻止 START_DESTROY_BLOCK / UseItemOnPacket）
+- 修复放置模式下选区拦截失败和重进存档假死的问题
+- 修复重进存档时"位置已设置"刷屏的问题
+- 修复 Modrinth 发布时依赖配置缺失的问题
+- 修复 26.2 步骤 litematica 依赖版本约束语法错误
+- 补全 1.21.11 和 1.21.1 步骤缺失的 malilib 与 litematica 依赖
+
+[Refactor]
+- selectionBoxDepthTest 重命名为 selectionBoxThroughView，语义更准确
+- 选区框不透视模式改用自行实现的 LEQUAL_DEPTH pipeline，malilib 原方法硬编码透视无法关闭
+
+[CI/Build]
+- 统一 26.x 命名为 26.2（tag 模式、release 名称、JAR 后缀）
+- worldedit 依赖层级由 optional 改为 required
+- 串行化 release job 避免并发更新同一 release 导致 race condition
+- 支持 1.21.1 分支与 test-* tag 测试发布
+- 升级 mod_version 0.5.4 -> 0.5.5
