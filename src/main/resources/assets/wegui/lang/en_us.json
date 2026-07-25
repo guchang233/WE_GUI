@@ -20,6 +20,8 @@
   "wegui.config.generic.comment.pastePreviewEnabled": "Preview clipboard paste location in-world after copy (rendered by Litematica)",
   "wegui.config.generic.name.selectionMessageEnabled": "Show Selection Messages",
   "wegui.config.generic.comment.selectionMessageEnabled": "Print \"First/Second position set\" hints in chat",
+  "wegui.config.generic.name.selectionBoxDepthTest": "Selection Box Depth Test",
+  "wegui.config.generic.comment.selectionBoxDepthTest": "When enabled, selection box lines are occluded by world blocks (no x-ray). When disabled, lines are visible through blocks (x-ray, default)",
   "wegui.config.generic.name.wandItem": "WE Wand Item",
   "wegui.config.generic.comment.wandItem": "Item ID used as the WorldEdit selection wand (default: minecraft:wooden_axe)",
 

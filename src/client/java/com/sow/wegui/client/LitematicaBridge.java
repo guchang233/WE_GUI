@@ -260,7 +260,10 @@ public final class LitematicaBridge {
      * renderSelectionBox 的后三个 float 参数语义（经字节码反编译确认）：
      *   arg3 = pos1/pos2 方块边框的位置偏移（Litematica 传 0.001f；切勿传真实 partialTicks，会导致边框每帧放大缩小）
      *   arg4 = pos1/pos2 方块边框的线宽（Litematica 区域选区传 2.0f）
-     *   arg5 = 区域轮廓线的线宽（Litematica 区域选区传 1.5f） */
+     *   arg5 = 区域轮廓线的线宽（Litematica 区域选区传 1.5f）
+     * 选区边框深度测试（selectionBoxDepthTest）：
+     *   关闭（默认）→ 禁用深度测试，线穿过方块可见（透视）
+     *   开启       → 启用深度测试，线被方块遮挡（不透视） */
     private static final class WeSelectionRenderer implements IRenderer {
         @Override
         public void onRenderWorldLast(RenderTarget renderTarget,
@@ -284,6 +287,11 @@ public final class LitematicaBridge {
             BlockPos pos2 = corners.pos2() != null ? corners.pos2() : pos1;
             Box box = new Box(pos1, pos2, WEGUI_SELECTION_BOX_NAME);
 
+            boolean depthTest = Configs.Generic.SELECTION_BOX_DEPTH_TEST.getBooleanValue();
+            if (!depthTest) {
+                org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            }
+
             OverlayRenderer.getInstance().renderSelectionBox(
                 box,
                 OverlayRenderer.BoxType.AREA_SELECTED,
@@ -291,6 +299,10 @@ public final class LitematicaBridge {
                 2.0f, 1.5f,
                 null
             );
+
+            if (!depthTest) {
+                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            }
         }
     }
 }

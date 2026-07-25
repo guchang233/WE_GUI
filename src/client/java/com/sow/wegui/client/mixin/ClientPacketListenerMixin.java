@@ -22,9 +22,13 @@ public class ClientPacketListenerMixin {
             // 中文（WorldEdit 7.4+ 官方翻译）
             Pattern.compile("第一选取点已设置为 .*"),
             Pattern.compile("第二选取点已设置为 .*"),
+            // 中文：重复点击同一位置时的“位置已设置。”提示（刷屏元凶）
+            Pattern.compile("位置已设置.*"),
             // 英文
             Pattern.compile("First position set to .*"),
-            Pattern.compile("Second position set to .*")
+            Pattern.compile("Second position set to .*"),
+            Pattern.compile("Position already set.*"),
+            Pattern.compile("Position set.*")
     );
 
     @Inject(method = {"handleSystemChat", "m_246046_"}, at = @At("HEAD"), cancellable = true)
