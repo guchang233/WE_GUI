@@ -46,7 +46,10 @@ public class Configs implements IConfigHandler {
         public static final ConfigBooleanHotkeyed PASTE_PREVIEW_ENABLED = new ConfigBooleanHotkeyed("pastePreviewEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed SELECTION_BOUNDS_ENABLED = new ConfigBooleanHotkeyed("selectionBoundsEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed SELECTION_MESSAGE_ENABLED = new ConfigBooleanHotkeyed("selectionMessageEnabled", false, "").apply(GENERIC_KEY);
-        public static final ConfigBoolean SELECTION_BOX_DEPTH_TEST = new ConfigBoolean("selectionBoxDepthTest", true).apply(GENERIC_KEY);
+        /** 边框透视：true=线穿过方块可见（x-ray），false=线被方块遮挡（默认）。
+         *  仅对 renderBlockOutline 的角点方块边框生效（malilib API 限制）。
+         *  renderAreaOutline 的区域轮廓在 malilib 内部固定使用 NO_DEPTH_NO_CULL 管线（始终透视），无法关闭。 */
+        public static final ConfigBoolean SELECTION_BOX_THROUGH_VIEW = new ConfigBoolean("selectionBoxThroughView", false).apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed BLOCK_OUTLINE_ENABLED = new ConfigBooleanHotkeyed("blockOutlineEnabled", false, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed BLOCK_VERIFICATION_ENABLED = new ConfigBooleanHotkeyed("blockVerificationEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigString WAND_ITEM = new ConfigString("wandItem", "minecraft:wooden_axe").apply(GENERIC_KEY);
@@ -56,7 +59,7 @@ public class Configs implements IConfigHandler {
                 PASTE_PREVIEW_ENABLED,
                 SELECTION_BOUNDS_ENABLED,
                 SELECTION_MESSAGE_ENABLED,
-                SELECTION_BOX_DEPTH_TEST,
+                SELECTION_BOX_THROUGH_VIEW,
                 BLOCK_OUTLINE_ENABLED,
                 BLOCK_VERIFICATION_ENABLED,
                 WAND_ITEM
