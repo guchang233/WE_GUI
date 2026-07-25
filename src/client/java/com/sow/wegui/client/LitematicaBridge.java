@@ -7,7 +7,6 @@ import com.sow.wegui.config.Configs;
 import com.sk89q.worldedit.math.transform.Transform;
 import com.sk89q.worldedit.session.ClipboardHolder;
 import fi.dy.masa.litematica.data.DataManager;
-import fi.dy.masa.litematica.render.OverlayRenderer;
 import fi.dy.masa.litematica.schematic.LitematicaSchematic;
 import fi.dy.masa.litematica.schematic.container.LitematicaBlockStateContainer;
 import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
@@ -16,6 +15,8 @@ import fi.dy.masa.litematica.selection.AreaSelection;
 import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.malilib.event.RenderEventHandler;
 import fi.dy.masa.malilib.interfaces.IRenderer;
+import fi.dy.masa.malilib.render.RenderUtils;
+import fi.dy.masa.malilib.util.data.Color4f;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.culling.Frustum;
@@ -36,11 +37,15 @@ import java.util.Map;
 /**
  * 把 WorldEdit 剪贴板与选区同步到 Litematica 的渲染系统。
  * - 剪贴板：通过 SchematicPlacementManager 注入 placement，Litematica 自动渲染 ghost blocks 与 mismatch
- * - 选区框：在 malilib onRenderWorldLast 中调用 OverlayRenderer.renderSelectionBox
+ * - 选区框：在 malilib onRenderWorldLast 中调用 RenderUtils.renderAreaOutline + renderBlockOutline
+ *
+ * 边框透视（selectionBoxThroughView）：
+ *   true  → 角点方块边框穿过世界方块可见（透视/x-ray）
+ *   false → 角点方块边框被世界方块遮挡（不透视，默认）
+ *   区域轮廓（renderAreaOutline）malilib 内部固定 NO_DEPTH_NO_CULL，始终透视，无法关闭。
  */
 public final class LitematicaBridge {
     private static final String WEGUI_PLACEMENT_NAME = "WeGui Clipboard Sync";
-    private static final String WEGUI_SELECTION_BOX_NAME = "WeGui WE Selection";
     private static final String REGION_NAME = "Main";
 
     @Nullable private static LitematicaSchematic currentSchematic;
@@ -255,16 +260,21 @@ public final class LitematicaBridge {
         }
     }
 
-    /** 用 Litematica 的 OverlayRenderer 渲染 WE 选区框，BoxType=AREA_SELECTED 使用三轴颜色。
-     * 每帧 new Box 避免 Box 内部派生状态跨帧不一致。
-     * renderSelectionBox 的后三个 float 参数语义（经字节码反编译确认）：
-     *   arg3 = pos1/pos2 方块边框的位置偏移（Litematica 传 0.001f；切勿传真实 partialTicks，会导致边框每帧放大缩小）
-     *   arg4 = pos1/pos2 方块边框的线宽（Litematica 区域选区传 2.0f）
-     *   arg5 = 区域轮廓线的线宽（Litematica 区域选区传 1.5f）
-     * 选区边框深度测试（selectionBoxDepthTest）：
-     *   关闭（默认）→ 禁用深度测试，线穿过方块可见（透视）
-     *   开启       → 启用深度测试，线被方块遮挡（不透视） */
+    /** 用 malilib RenderUtils 渲染 WE 选区框：三轴颜色的区域轮廓 + 两个角点方块边框。
+     * 26.2 适配：malilib 0.29.2 的 RenderUtils.renderAreaOutline/renderBlockOutline（5 参数版带 throughView）。
+     * 参数语义（与 Litematica OverlayRenderer.renderSelectionBox AREA_SELECTED 分支保持一致）：
+     *   - 区域轮廓线宽 1.5f，三轴颜色 X=红/Y=绿/Z=蓝
+     *   - 角点方块边框 expand=0.001f（避免 Z-fighting），线宽 2.0f，白色
+     *
+     * 边框透视（selectionBoxThroughView）：
+     *   - 区域轮廓：malilib renderAreaOutline 内部固定 NO_DEPTH_NO_CULL，始终透视，无法控制。
+     *   - 角点方块边框：renderBlockOutline 第 5 参数 throughView 控制透视/不透视。 */
     private static final class WeSelectionRenderer implements IRenderer {
+        private static final Color4f COLOR_X = new Color4f(1.0f, 0.0625f, 0.0625f);
+        private static final Color4f COLOR_Y = new Color4f(0.0625f, 1.0f, 0.0625f);
+        private static final Color4f COLOR_Z = new Color4f(0.0625f, 0.0625f, 1.0f);
+        private static final Color4f COLOR_CORNER = new Color4f(1.0f, 1.0f, 1.0f);
+
         @Override
         public void onRenderWorldLast(RenderTarget renderTarget,
                                        Matrix4fc matrix,
@@ -279,29 +289,28 @@ public final class LitematicaBridge {
             if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) return;
 
             WorldEditBridge.PartialCornerPositions corners = WorldEditBridge.getPartialSelectionCorners(mc);
-            if (corners == null || corners.pos1() == null) {
-                return;
-            }
+            if (corners == null || corners.pos1() == null) return;
 
             BlockPos pos1 = corners.pos1();
             BlockPos pos2 = corners.pos2() != null ? corners.pos2() : pos1;
-            Box box = new Box(pos1, pos2, WEGUI_SELECTION_BOX_NAME);
 
-            boolean depthTest = Configs.Generic.SELECTION_BOX_DEPTH_TEST.getBooleanValue();
-            if (!depthTest) {
-                org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            boolean throughView = Configs.Generic.SELECTION_BOX_THROUGH_VIEW.getBooleanValue();
+
+            // 区域轮廓（三轴颜色，malilib 内部固定 NO_DEPTH_NO_CULL 始终透视，不受开关影响）
+            try {
+                RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
+            } catch (Throwable ex) {
+                WeGuiMod.LOGGER.error("[WeGui] renderAreaOutline failed", ex);
             }
 
-            OverlayRenderer.getInstance().renderSelectionBox(
-                box,
-                OverlayRenderer.BoxType.AREA_SELECTED,
-                0.001f,
-                2.0f, 1.5f,
-                null
-            );
-
-            if (!depthTest) {
-                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            // 角点方块边框（throughView=true 透视，false 不透视）
+            try {
+                RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, throughView);
+                if (corners.pos2() != null) {
+                    RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, throughView);
+                }
+            } catch (Throwable ex) {
+                WeGuiMod.LOGGER.error("[WeGui] renderBlockOutline failed", ex);
             }
         }
     }

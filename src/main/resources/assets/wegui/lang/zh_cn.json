@@ -20,8 +20,8 @@
   "wegui.config.generic.comment.pastePreviewEnabled": "复制后在世界中预览粘贴位置（由 Litematica 渲染）",
   "wegui.config.generic.name.selectionMessageEnabled": "显示选区提示消息",
   "wegui.config.generic.comment.selectionMessageEnabled": "在聊天栏显示“第一点/第二点已选”提示",
-  "wegui.config.generic.name.selectionBoxDepthTest": "选区边框深度测试",
-  "wegui.config.generic.comment.selectionBoxDepthTest": "开启后选区边框会被世界方块遮挡（不可透视）；关闭则边框线穿过方块可见（透视，默认）",
+  "wegui.config.generic.name.selectionBoxThroughView": "选区边框透视",
+  "wegui.config.generic.comment.selectionBoxThroughView": "开启后选区边框穿过世界方块可见（透视/x-ray，默认关闭）；关闭则被方块遮挡。注意：区域轮廓线始终透视（malilib 限制）",
   "wegui.config.generic.name.wandItem": "WE 绑定工具物品",
   "wegui.config.generic.comment.wandItem": "作为 WorldEdit 选区魔杖的物品 ID（默认 minecraft:wooden_axe）",
 

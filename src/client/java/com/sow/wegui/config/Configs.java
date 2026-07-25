@@ -43,14 +43,15 @@ public class Configs implements IConfigHandler {
         public static final ConfigBooleanHotkeyed STATUS_BAR_ENABLED = new ConfigBooleanHotkeyed("statusBarEnabled", false, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed PASTE_PREVIEW_ENABLED = new ConfigBooleanHotkeyed("pastePreviewEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed SELECTION_MESSAGE_ENABLED = new ConfigBooleanHotkeyed("selectionMessageEnabled", false, "").apply(GENERIC_KEY);
-        public static final ConfigBoolean SELECTION_BOX_DEPTH_TEST = new ConfigBoolean("selectionBoxDepthTest", true).apply(GENERIC_KEY);
+        /** 边框透视：true=线穿过方块可见（x-ray），false=线被方块遮挡（默认）。 */
+        public static final ConfigBoolean SELECTION_BOX_THROUGH_VIEW = new ConfigBoolean("selectionBoxThroughView", false).apply(GENERIC_KEY);
         public static final ConfigString WAND_ITEM = new ConfigString("wandItem", "minecraft:wooden_axe").apply(GENERIC_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 STATUS_BAR_ENABLED,
                 PASTE_PREVIEW_ENABLED,
                 SELECTION_MESSAGE_ENABLED,
-                SELECTION_BOX_DEPTH_TEST,
+                SELECTION_BOX_THROUGH_VIEW,
                 WAND_ITEM
         );
 
