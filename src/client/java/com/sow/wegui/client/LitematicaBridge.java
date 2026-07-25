@@ -282,10 +282,14 @@ public final class LitematicaBridge {
             if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) return;
 
             WorldEditBridge.PartialCornerPositions corners = WorldEditBridge.getPartialSelectionCorners(mc);
-            if (corners == null || corners.pos1() == null) return;
+            if (corners == null) return;
 
             BlockPos pos1 = corners.pos1();
-            BlockPos pos2 = corners.pos2() != null ? corners.pos2() : pos1;
+            BlockPos pos2 = corners.pos2();
+            boolean hasPos1 = pos1 != null;
+            boolean hasPos2 = pos2 != null;
+            // 两点都未设：无选区可渲染
+            if (!hasPos1 && !hasPos2) return;
 
             // 边框透视：true=禁用 depth test（线穿过方块可见），false=启用 depth test（被方块遮挡，默认）
             // 0.21.10 不覆盖 GL 状态，渲染前后显式切换 depth test 即可控制透视。
@@ -295,9 +299,14 @@ public final class LitematicaBridge {
             }
 
             try {
-                RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z, mc);
-                RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, mc);
-                if (corners.pos2() != null) {
+                if (hasPos1 != hasPos2) {
+                    // 只设了一个点：只渲染该点的单方块白色边框，不画区域轮廓
+                    BlockPos only = hasPos1 ? pos1 : pos2;
+                    RenderUtils.renderBlockOutline(only, 0.001f, 2.0f, COLOR_CORNER, mc);
+                } else {
+                    // 两点都已设：渲染完整长方体选区（区域轮廓 + 两个角点方块边框）
+                    RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z, mc);
+                    RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, mc);
                     RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, mc);
                 }
             } catch (Throwable ex) {
