@@ -36,6 +36,10 @@ import java.util.Map;
  * 签名 (Matrix4f posMatrix, Matrix4f projMatrix)。
  * litematica 0.19.61 的 OverlayRenderer.BoxType 为 package-private 无法外部访问，
  * 因此直接调用 malilib 公开的 RenderUtils.renderAreaOutline + renderBlockOutline。
+ *
+ * 选区边框深度测试（selectionBoxDepthTest）：
+ *   关闭 → 禁用深度测试，线穿过方块可见（透视）
+ *   开启（默认）→ 启用深度测试，线被方块遮挡（不透视）
  */
 public final class LitematicaBridge {
     private static final String WEGUI_PLACEMENT_NAME = "WeGui Clipboard Sync";
@@ -279,11 +283,20 @@ public final class LitematicaBridge {
             BlockPos pos1 = corners.pos1();
             BlockPos pos2 = corners.pos2() != null ? corners.pos2() : pos1;
 
+            boolean depthTest = Configs.Generic.SELECTION_BOX_DEPTH_TEST.getBooleanValue();
+            if (!depthTest) {
+                org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            }
+
             // 区域轮廓（三轴颜色，与 Litematica AREA_SELECTED 行为一致）
             RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z, mc);
             // 两个角点方块边框
             RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, mc);
             RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, mc);
+
+            if (!depthTest) {
+                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            }
         }
     }
 }
