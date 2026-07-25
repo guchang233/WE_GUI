@@ -30,21 +30,22 @@ import java.util.Map;
 
 /**
  * WE 绑定工具多模式控制：
- * - 放置模式：左键 pos1（保留 WE 选区），右键方块 = 把粘贴预览同步到该方块并执行 //paste
- * - 编辑选区模式：Alt+滚轮 向玩家朝向挪动上一次修改的选点
- * - 移动粘贴预览模式：Alt+滚轮 移动 Litematica 同步预览的原点
+ * - 编辑选区模式：保留 WorldEdit 默认行为（左键 pos1，右键 pos2），Alt+滚轮挪动选点
+ * - 放置模式：禁用 WE 工具的左右键选区行为；左键不破坏方块也不选 pos1；右键方块 = 移动 Litematica 预览原点（仅预览，用户手动 //paste 才真正粘贴）
+ * - 移动粘贴预览模式：禁用 WE 工具的左右键选区行为；Alt+滚轮 移动 Litematica 同步预览的原点
  *
  * 模式切换：Ctrl+滚轮 循环切换；按下 Ctrl 或 Alt 时滚轮事件都会被消费避免触发物品栏切换。
  *
- * <p>1.21.11 适配：使用 {@code player.displayClientMessage(msg, true)} 替代 26.x 的
- * {@code sendOverlayMessage}，使用 {@code mc.screen} 替代 {@code mc.gui.screen()}。</p>
+ * <p>1.21.1 适配：使用 {@code player.displayClientMessage(msg, true)} 替代 26.x 的
+ * {@code sendOverlayMessage}，使用 {@code mc.screen} 替代 {@code mc.gui.screen()}，
+ * UseItemCallback 返回 {@code InteractionResultHolder<ItemStack>}。</p>
  */
 public final class AxeModeHandler {
     private AxeModeHandler() {}
 
     public enum AxeMode {
-        PLACE("wegui.mode.place"),
         EDIT_SELECTION("wegui.mode.edit_selection"),
+        PLACE("wegui.mode.place"),
         MOVE_PASTE_PREVIEW("wegui.mode.move_paste_preview");
 
         private final String translationKey;
@@ -66,7 +67,7 @@ public final class AxeModeHandler {
         NONE, POS1, POS2
     }
 
-    private static AxeMode currentMode = AxeMode.PLACE;
+    private static AxeMode currentMode = AxeMode.EDIT_SELECTION;
     private static LastModifiedCorner lastModified = LastModifiedCorner.NONE;
     private static BlockPos pastePreviewOffset = BlockPos.ZERO;
     private static Item cachedWandItem;
@@ -87,9 +88,22 @@ public final class AxeModeHandler {
             }
         });
 
-        // 左键记录 pos1 为最后修改点，并根据开关显示提示
+        // 左键：
+        // - 编辑选区模式：记录 pos1 为最后修改点，保留 WE 默认 pos1 行为
+        // - 放置模式：阻止破坏包发送，避免 WE 服务端触发 pos1 选区（无法只破坏不选区，因同一包同时触发两者）
+        // - 移动 paste 预览模式：禁用 WE 左键 pos1 行为
         AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
             if (level.isClientSide() && hand == InteractionHand.MAIN_HAND && isHoldingConfiguredWand(player)) {
+                WeGuiMod.LOGGER.info("[WE GUI] AttackBlockCallback mode={} pos={}", currentMode, pos);
+                if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
+                    return InteractionResult.SUCCESS;
+                }
+                // PLACE 模式：返回 SUCCESS 阻止 START_DESTROY_BLOCK 包发送到服务端，
+                // 从而阻止 WE 在服务端的 AttackBlockCallback 处理中设置 pos1。
+                // 副作用：客户端不会预测破坏方块（无法实现“只破坏不选区”，因同一包触发两者）
+                if (currentMode == AxeMode.PLACE) {
+                    return InteractionResult.SUCCESS;
+                }
                 lastModified = LastModifiedCorner.POS1;
                 if (Configs.Generic.SELECTION_MESSAGE_ENABLED.getBooleanValue()) {
                     player.displayClientMessage(Component.translatable("wegui.message.pos1_set", formatPos(pos)).withStyle(ChatFormatting.DARK_PURPLE), false);
@@ -99,12 +113,13 @@ public final class AxeModeHandler {
         });
 
         // 右键方块：
-        // - 放置模式：把粘贴预览同步到右键方块并执行 //paste
+        // - 放置模式：把粘贴预览移动到右键方块（仅预览，不执行 //paste）
         // - 移动 paste 预览模式：禁用 WorldEdit 默认 pos2 行为
         UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
             if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
                 return InteractionResult.PASS;
             }
+            WeGuiMod.LOGGER.info("[WE GUI] UseBlockCallback mode={} target={}", currentMode, hitResult.getBlockPos());
 
             if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
                 return InteractionResult.SUCCESS;
@@ -112,7 +127,7 @@ public final class AxeModeHandler {
 
             if (currentMode == AxeMode.PLACE) {
                 BlockPos target = hitResult.getBlockPos();
-                pasteAtTarget(player, target);
+                movePreviewTo((LocalPlayer) player, target);
                 return InteractionResult.SUCCESS;
             }
 
@@ -124,13 +139,14 @@ public final class AxeModeHandler {
             return InteractionResult.PASS;
         });
 
-        // 右键物品/空气：移动 paste 预览模式下禁用 WorldEdit 默认 pos2 行为
+        // 右键物品/空气：放置模式 / 移动 paste 预览模式下禁用 WorldEdit 默认 pos2 行为
         UseItemCallback.EVENT.register((player, level, hand) -> {
             if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
                 return InteractionResultHolder.pass(ItemStack.EMPTY);
             }
+            WeGuiMod.LOGGER.info("[WE GUI] UseItemCallback mode={}", currentMode);
 
-            if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
+            if (currentMode == AxeMode.PLACE || currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
                 return InteractionResultHolder.success(ItemStack.EMPTY);
             }
 
@@ -187,15 +203,11 @@ public final class AxeModeHandler {
     }
 
     /**
-     * 放置模式下：把粘贴预览同步到 target 方块并执行 //paste。
+     * 放置模式下：把粘贴预览同步到 target 方块（仅移动预览，不执行 //paste）。
      * - 同步预览原点到 target（让 Litematica 渲染立即移动到该方块）
-     * - 在 target 位置执行 WorldEdit 粘贴
+     * - 用户需要手动 //paste 才会真正粘贴
      */
-    private static void pasteAtTarget(LocalPlayer player, BlockPos target) {
-        if (!WorldEditBridge.canUseDirectPaste()) {
-            player.displayClientMessage(Component.translatable("wegui.message.fixed_mode_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
-            return;
-        }
+    private static void movePreviewTo(LocalPlayer player, BlockPos target) {
         if (!hasClipboard()) {
             player.displayClientMessage(Component.translatable("wegui.message.fixed_mode_no_clipboard").withStyle(ChatFormatting.RED), true);
             return;
@@ -204,13 +216,8 @@ public final class AxeModeHandler {
         // 同步预览原点到 target，让 Litematica 渲染立即移动到该方块
         setFixedOrigin(target);
 
-        WeGuiMod.LOGGER.info("[WE GUI] 放置模式 paste 到 {}", target);
-        boolean success = WorldEditBridge.pasteClipboardAt(player, target);
-        if (success) {
-            player.displayClientMessage(Component.translatable("wegui.message.paste_success", formatPos(target)).withStyle(ChatFormatting.GREEN), true);
-        } else {
-            player.displayClientMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED), true);
-        }
+        WeGuiMod.LOGGER.info("[WE GUI] 放置模式移动预览到 {}", target);
+        player.displayClientMessage(Component.translatable("wegui.message.preview_moved", formatPos(target)).withStyle(ChatFormatting.GREEN), true);
     }
 
     // ---- 固定放置模式状态访问 ----
@@ -395,9 +402,17 @@ public final class AxeModeHandler {
 
     public static boolean isHoldingConfiguredWand(Player player) {
         Item wandItem = getConfiguredWandItem();
-        if (wandItem == null) return false;
-        return player.getMainHandItem().is(wandItem)
-                || player.getOffhandItem().is(wandItem);
+        if (wandItem == null) {
+            WeGuiMod.LOGGER.warn("[WE GUI] isHoldingConfiguredWand: wandItem=null (id={})", Configs.Generic.WAND_ITEM.getStringValue());
+            return false;
+        }
+        boolean main = player.getMainHandItem().is(wandItem);
+        boolean off = player.getOffhandItem().is(wandItem);
+        if (!main && !off) {
+            WeGuiMod.LOGGER.warn("[WE GUI] isHoldingConfiguredWand: main={}, off={}, mainItem={}, offItem={}",
+                    main, off, player.getMainHandItem().getItem(), player.getOffhandItem().getItem());
+        }
+        return main || off;
     }
 
     @Nullable
