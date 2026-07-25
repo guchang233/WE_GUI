@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     branches: [main, support/1.21.11, support/1.21.1]
-    tags: ["v*-26.x", "v*-1.21.11", "v*-1.21.1", "test-*-26.x", "test-*-1.21.11", "test-*-1.21.1"]
+    tags: ["v*-26.2", "v*-1.21.11", "v*-1.21.1", "test-*-26.2", "test-*-1.21.11", "test-*-1.21.1"]
   pull_request:
     branches: [main, support/1.21.11, support/1.21.1]
   workflow_dispatch:
@@ -26,11 +26,11 @@ jobs:
         shell: bash
         run: |
           # 根据 ref（tag 或 branch）判断目标 MC 版本与 Java 版本
-          # tag 形如 refs/tags/v0.5.0-26.x / refs/tags/v0.5.0-1.21.11 / refs/tags/v0.5.0-1.21.1
-          #      或 refs/tags/test-1.0-26.x / refs/tags/test-1.0-1.21.11 / refs/tags/test-1.0-1.21.1
+          # tag 形如 refs/tags/v0.5.0-26.2 / refs/tags/v0.5.0-1.21.11 / refs/tags/v0.5.0-1.21.1
+          #      或 refs/tags/test-1.0-26.2 / refs/tags/test-1.0-1.21.11 / refs/tags/test-1.0-1.21.1
           # branch 形如 refs/heads/main / refs/heads/support/1.21.11 / refs/heads/support/1.21.1
           REF="${GITHUB_REF}"
-          if [[ "$REF" == refs/tags/*-26.x ]] || [[ "$REF" == refs/heads/main ]]; then
+          if [[ "$REF" == refs/tags/*-26.2 ]] || [[ "$REF" == refs/heads/main ]]; then
             echo "java=25" >> "$GITHUB_OUTPUT"
           elif [[ "$REF" == refs/tags/*-1.21.11 ]] || [[ "$REF" == refs/heads/support/1.21.11 ]]; then
             echo "java=21" >> "$GITHUB_OUTPUT"
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # 多个 tag（如 test-1.0-26.x / test-1.0-1.21.11 / test-1.0-1.21.1）共享同一个 release
+    # 多个 tag（如 test-1.0-26.2 / test-1.0-1.21.11 / test-1.0-1.21.1）共享同一个 release
     # 使用 job-level concurrency 串行化 release 步骤，避免并发创建/更新同一个 release 导致 race condition
     # （GitHub Release API 只允许一个创建成功，并发会导致部分 jar 无法附加）
     # 同一 base-version 的 test-* tag 共享同一组串行执行；不同 base-version 互不影响
@@ -91,15 +91,15 @@ jobs:
         id: parse
         shell: bash
         run: |
-          # tag 形如 v0.5.0-26.x / v0.5.0-1.21.11 / v0.5.0-1.21.1
-          #      或 test-1.0-26.x / test-1.0-1.21.11 / test-1.0-1.21.1
-          # base-version: v0.5.0 或 test-1.0（去掉 -26.x / -1.21.11 / -1.21.1 后缀，用作同一个 release 的 tag_name）
+          # tag 形如 v0.5.0-26.2 / v0.5.0-1.21.11 / v0.5.0-1.21.1
+          #      或 test-1.0-26.2 / test-1.0-1.21.11 / test-1.0-1.21.1
+          # base-version: v0.5.0 或 test-1.0（去掉 -26.2 / -1.21.11 / -1.21.1 后缀，用作同一个 release 的 tag_name）
           # mc-version:   Modrinth game-versions
           # jar-suffix:   jar 文件名后缀，便于在同一个 release 中区分多个构建
           # is-test:      test-* tag 跳过 Modrinth 发布
           TAG="${GITHUB_REF_NAME}"
-          BASE_VERSION=$(echo "$TAG" | sed -E 's/-(26\.x|1\.21\.11|1\.21\.1)$//')
-          if echo "$TAG" | grep -qE -- '-26\.x$'; then
+          BASE_VERSION=$(echo "$TAG" | sed -E 's/-(26\.2|1\.21\.11|1\.21\.1)$//')
+          if echo "$TAG" | grep -qE -- '-26\.2$'; then
             MC_VERSION="26.2"
             JAR_SUFFIX="26.2"
             JAVA_VER="25"
@@ -112,7 +112,7 @@ jobs:
             JAR_SUFFIX="1.21.1"
             JAVA_VER="21"
           else
-            echo "Unknown tag format: $TAG (expected v<version>-26.x / v<version>-1.21.11 / v<version>-1.21.1, or test-<version>-26.x etc.)"
+            echo "Unknown tag format: $TAG (expected v<version>-26.2 / v<version>-1.21.11 / v<version>-1.21.1, or test-<version>-26.2 etc.)"
             exit 1
           fi
           if echo "$TAG" | grep -qE -- '^test-'; then
@@ -175,8 +175,8 @@ jobs:
           ls -la *.jar
 
       - name: Create/update shared release
-        # 多个 tag（如 v0.5.0-26.x / v0.5.0-1.21.11 / v0.5.0-1.21.1）共用同一个 release（tag_name = base-version，如 v0.5.0）
-        # test-* tag 同理（如 test-1.0-26.x / test-1.0-1.21.11 / test-1.0-1.21.1 共享 test-1.0 release）
+        # 多个 tag（如 v0.5.0-26.2 / v0.5.0-1.21.11 / v0.5.0-1.21.1）共用同一个 release（tag_name = base-version，如 v0.5.0）
+        # test-* tag 同理（如 test-1.0-26.2 / test-1.0-1.21.11 / test-1.0-1.21.1 共享 test-1.0 release）
         # softprops/action-gh-release 在 release 已存在时会自动追加文件而非覆盖
         uses: softprops/action-gh-release@v3
         with:
@@ -186,7 +186,7 @@ jobs:
           body: ${{ steps.changelog.outputs.changelog }}
           generate_release_notes: ${{ steps.changelog.outputs.found != 'true' }}
 
-      - name: Publish to Modrinth (26.x)
+      - name: Publish to Modrinth (26.2)
         if: steps.parse.outputs.mc-version == '26.2' && steps.parse.outputs.is-test != 'true'
         uses: Kir-Antipov/mc-publish@v3.3
         with:
@@ -203,7 +203,7 @@ jobs:
             fabric-api(required){modrinth:P7dR8mSH}
             malilib@>=0.29.2(required){modrinth:GcWjdA9I}
             litematica@>=0.28.4-(required){modrinth:bEpr0Arc}
-            worldedit(optional){modrinth:1u6JkXh5}
+            worldedit(required){modrinth:1u6JkXh5}
           java: |
             25
           fail-mode: warn
@@ -223,7 +223,7 @@ jobs:
           game-versions: ${{ steps.parse.outputs.mc-version }}
           dependencies: |
             fabric-api(required){modrinth:P7dR8mSH}
-            worldedit(optional){modrinth:1u6JkXh5}
+            worldedit(required){modrinth:1u6JkXh5}
           java: |
             21
           fail-mode: warn
@@ -243,7 +243,7 @@ jobs:
           game-versions: ${{ steps.parse.outputs.mc-version }}
           dependencies: |
             fabric-api(required){modrinth:P7dR8mSH}
-            worldedit(optional){modrinth:1u6JkXh5}
+            worldedit(required){modrinth:1u6JkXh5}
           java: |
             21
           fail-mode: warn
