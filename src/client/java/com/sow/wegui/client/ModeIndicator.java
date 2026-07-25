@@ -38,9 +38,9 @@ public final class ModeIndicator {
         for (int i = 0; i < modes.length && i < cachedModeNames.length; i++) {
             cachedModeNames[i] = Component.translatable(modes[i].getTranslationKey()).getString();
             String hintKey = switch (modes[i]) {
+                case PLACE -> "wegui.mode.hint.place";
                 case EDIT_SELECTION -> "wegui.mode.hint.edit";
                 case MOVE_PASTE_PREVIEW -> "wegui.mode.hint.move_paste_preview";
-                default -> "wegui.mode.hint.normal";
             };
             cachedHints[i] = Component.translatable(hintKey).getString();
         }
