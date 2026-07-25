@@ -76,18 +76,14 @@ public final class LitematicaBridge {
         WeGuiMod.LOGGER.info("[WeGui] 存档断开：已清理 Litematica placement 与同步状态");
     }
 
-    /** 进入存档时清空 WE 剪贴板，避免上一次会话的剪贴板残留导致投影错乱。 */
+    /** 进入存档时重置同步状态（不主动清空 WE 剪贴板，避免破坏 WE 会话状态导致假死）。
+     *  WE 自身的 session 会在玩家退出时由 WE 自己清理，无需本 mod 介入。 */
     private static void onWorldJoin(Minecraft mc) {
-        if (mc.player == null || !WorldEditAdapter.isLoaded()) return;
-        try {
-            com.sk89q.worldedit.LocalSession session = WorldEditAdapter.session(mc.player);
-            if (session != null) {
-                session.setClipboard(null);
-                WeGuiMod.LOGGER.info("[WeGui] 存档连接：已清空 WE 剪贴板");
-            }
-        } catch (Throwable e) {
-            WeGuiMod.LOGGER.debug("[WeGui] 清空 WE 剪贴板失败: {}", e.toString());
-        }
+        // 仅重置本 mod 的同步状态，WE 剪贴板由 WE 自己管理
+        lastHolder = null;
+        lastTransform = null;
+        lastSyncedOrigin = null;
+        WeGuiMod.LOGGER.info("[WeGui] 存档连接：已重置 Litematica 同步状态");
     }
 
     /** 导出当前 Litematica 投影为原理图文件到指定目录。成功返回 true。 */

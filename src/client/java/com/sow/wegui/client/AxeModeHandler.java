@@ -90,19 +90,17 @@ public final class AxeModeHandler {
 
         // 左键：
         // - 编辑选区模式：记录 pos1 为最后修改点，保留 WE 默认 pos1 行为
-        // - 放置模式：阻止破坏包发送，避免 WE 服务端触发 pos1 选区（无法只破坏不选区，因同一包同时触发两者）
-        // - 移动 paste 预览模式：禁用 WE 左键 pos1 行为
+        // - 放置模式：返回 FAIL 阻止 START_DESTROY_BLOCK 包发送到服务端，
+        //   使服务端 WE 的 AttackBlockCallback 不会被触发，从而不设置 pos1。
+        //   副作用：客户端不会破坏方块（无法实现“只破坏不选区”，因同一包触发两者）
+        // - 移动 paste 预览模式：同上，阻止 pos1 选区
         AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
             if (level.isClientSide() && hand == InteractionHand.MAIN_HAND && isHoldingConfiguredWand(player)) {
                 WeGuiMod.LOGGER.info("[WE GUI] AttackBlockCallback mode={} pos={}", currentMode, pos);
-                if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
-                    return InteractionResult.SUCCESS;
-                }
-                // PLACE 模式：返回 SUCCESS 阻止 START_DESTROY_BLOCK 包发送到服务端，
-                // 从而阻止 WE 在服务端的 AttackBlockCallback 处理中设置 pos1。
-                // 副作用：客户端不会预测破坏方块（无法实现“只破坏不选区”，因同一包触发两者）
-                if (currentMode == AxeMode.PLACE) {
-                    return InteractionResult.SUCCESS;
+                if (currentMode == AxeMode.MOVE_PASTE_PREVIEW || currentMode == AxeMode.PLACE) {
+                    // FAIL: 取消 vanilla 处理且不发送 START_DESTROY_BLOCK 包到服务端
+                    // (SUCCESS/CONSUME 会触发 Fabric Mixin 主动补发包，仍会触发服务端 WE 选区)
+                    return InteractionResult.FAIL;
                 }
                 lastModified = LastModifiedCorner.POS1;
                 if (Configs.Generic.SELECTION_MESSAGE_ENABLED.getBooleanValue()) {
@@ -113,8 +111,8 @@ public final class AxeModeHandler {
         });
 
         // 右键方块：
-        // - 放置模式：把粘贴预览移动到右键方块（仅预览，不执行 //paste）
-        // - 移动 paste 预览模式：禁用 WorldEdit 默认 pos2 行为
+        // - 放置模式：把粘贴预览移动到右键方块（仅预览，不执行 //paste），返回 FAIL 阻止服务端 WE 选 pos2
+        // - 移动 paste 预览模式：同上，阻止 pos2 选区
         UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
             if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
                 return InteractionResult.PASS;
@@ -122,13 +120,14 @@ public final class AxeModeHandler {
             WeGuiMod.LOGGER.info("[WE GUI] UseBlockCallback mode={} target={}", currentMode, hitResult.getBlockPos());
 
             if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
-                return InteractionResult.SUCCESS;
+                return InteractionResult.FAIL;
             }
 
             if (currentMode == AxeMode.PLACE) {
                 BlockPos target = hitResult.getBlockPos();
                 movePreviewTo((LocalPlayer) player, target);
-                return InteractionResult.SUCCESS;
+                // FAIL: 阻止服务端收到 UseItemOnPacket，避免 WE 在服务端 UseBlockCallback 中设置 pos2
+                return InteractionResult.FAIL;
             }
 
             lastModified = LastModifiedCorner.POS2;
@@ -139,7 +138,7 @@ public final class AxeModeHandler {
             return InteractionResult.PASS;
         });
 
-        // 右键物品/空气：放置模式 / 移动 paste 预览模式下禁用 WorldEdit 默认 pos2 行为
+        // 右键物品/空气：放置模式 / 移动 paste 预览模式下阻止服务端 WE 默认 pos2 行为
         UseItemCallback.EVENT.register((player, level, hand) -> {
             if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
                 return InteractionResultHolder.pass(ItemStack.EMPTY);
@@ -147,7 +146,8 @@ public final class AxeModeHandler {
             WeGuiMod.LOGGER.info("[WE GUI] UseItemCallback mode={}", currentMode);
 
             if (currentMode == AxeMode.PLACE || currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
-                return InteractionResultHolder.success(ItemStack.EMPTY);
+                // FAIL: 阻止服务端收到 UseItemPacket（避免 WE 在服务端 UseItemCallback 中设置 pos2）
+                return InteractionResultHolder.fail(ItemStack.EMPTY);
             }
 
             return InteractionResultHolder.pass(ItemStack.EMPTY);
