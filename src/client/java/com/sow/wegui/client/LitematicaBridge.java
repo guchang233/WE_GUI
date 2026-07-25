@@ -257,20 +257,24 @@ public final class LitematicaBridge {
         }
     }
 
-    /** 用 malilib RenderUtils 渲染 WE 选区框：三轴颜色的区域轮廓 + 两个角点方块边框。
-     * 1.21.11 适配：直接调用 malilib 公开的 RenderUtils.renderAreaOutline + renderBlockOutline。
+    /** 用 malilib RenderUtils 渲染 WE 选区框：三轴颜色的区域轮廓 + 半透明侧面 + 两个角点方块边框。
+     * 1.21.11 适配：直接调用 malilib 公开的 RenderUtils.renderAreaOutline + renderAreaSides + renderBlockOutline。
      * 参数语义（与 Litematica OverlayRenderer.renderSelectionBox AREA_SELECTED 分支保持一致）：
      *   - 区域轮廓线宽 1.5f，三轴颜色 X=红/Y=绿/Z=蓝
+     *   - 半透明侧面 alpha=0.4，白色
      *   - 角点方块边框 expand=0.001f（避免 Z-fighting），线宽 2.0f，白色
      *
      * 边框透视（selectionBoxThroughView）：
-     *   - 区域轮廓：malilib renderAreaOutline 内部固定 NO_DEPTH_NO_CULL，始终透视，无法控制。
-     *   - 角点方块边框：renderBlockOutline 第 5 参数 throughView 控制透视/不透视。 */
+     *   - 半透明侧面：renderAreaSides 默认 LEQUAL_DEPTH（不透视），透视模式通过 RenderSystem.disableDepthTest 控制
+     *   - 区域轮廓：malilib renderAreaOutline 内部固定 NO_DEPTH_NO_CULL，始终透视，无法关闭（malilib 0.27.0 限制）
+     *   - 角点方块边框：renderBlockOutline 第 5 参数 throughView 控制透视/不透视 */
     private static final class WeSelectionRenderer implements IRenderer {
         private static final Color4f COLOR_X = new Color4f(1.0f, 0.0625f, 0.0625f);
         private static final Color4f COLOR_Y = new Color4f(0.0625f, 1.0f, 0.0625f);
         private static final Color4f COLOR_Z = new Color4f(0.0625f, 0.0625f, 1.0f);
         private static final Color4f COLOR_CORNER = new Color4f(1.0f, 1.0f, 1.0f);
+        // 侧面半透明白色（与 Litematica AREA_SELECTED 的 colorArea + alpha 0.4 一致）
+        private static final Color4f COLOR_AREA_SIDES = new Color4f(1.0f, 1.0f, 1.0f, 0.4f);
 
         @Override
         public void onRenderWorldLastAdvanced(RenderTarget target, Matrix4f posMatrix, Matrix4f projMatrix,
@@ -288,21 +292,47 @@ public final class LitematicaBridge {
 
             boolean throughView = Configs.Generic.SELECTION_BOX_THROUGH_VIEW.getBooleanValue();
 
-            // 区域轮廓（三轴颜色，malilib 内部固定 NO_DEPTH_NO_CULL 始终透视，不受开关影响）
             try {
-                RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
-            } catch (Throwable ex) {
-                WeGuiMod.LOGGER.error("[WeGui] renderAreaOutline failed", ex);
-            }
-
-            // 角点方块边框（throughView=true 透视，false 不透视）
-            try {
-                RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, throughView);
-                if (corners.pos2() != null) {
-                    RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, throughView);
+                // 1. 半透明侧面（throughView=true 透视，false 不透视）
+                //    renderAreaSides 默认 LEQUAL_DEPTH，透视模式需 RenderSystem.disableDepthTest
+                applyDepthTest(throughView);
+                try {
+                    RenderUtils.renderAreaSides(pos1, pos2, COLOR_AREA_SIDES, posMatrix);
+                } catch (Throwable ex) {
+                    WeGuiMod.LOGGER.error("[WeGui] renderAreaSides failed", ex);
                 }
-            } catch (Throwable ex) {
-                WeGuiMod.LOGGER.error("[WeGui] renderBlockOutline failed", ex);
+
+                // 2. 区域轮廓（malilib 内部固定 NO_DEPTH_NO_CULL 始终透视，无法关闭）
+                //    透视模式下显式禁用 depth test 确保一致性
+                applyDepthTest(throughView);
+                try {
+                    RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
+                } catch (Throwable ex) {
+                    WeGuiMod.LOGGER.error("[WeGui] renderAreaOutline failed", ex);
+                }
+
+                // 3. 角点方块边框（throughView=true 透视，false 不透视）
+                applyDepthTest(throughView);
+                try {
+                    RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, throughView);
+                    if (corners.pos2() != null) {
+                        RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, throughView);
+                    }
+                } catch (Throwable ex) {
+                    WeGuiMod.LOGGER.error("[WeGui] renderBlockOutline failed", ex);
+                }
+            } finally {
+                // 恢复 depth test 到默认启用状态
+                com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
+            }
+        }
+
+        /** 根据 throughView 设置 depth test：true=禁用（透视），false=启用（不透视）。 */
+        private static void applyDepthTest(boolean throughView) {
+            if (throughView) {
+                com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
+            } else {
+                com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
             }
         }
     }
