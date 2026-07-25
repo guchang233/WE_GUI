@@ -71,6 +71,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # 多个 tag（如 test-1.0-26.x / test-1.0-1.21.11 / test-1.0-1.21.1）共享同一个 release
+    # 使用 job-level concurrency 串行化 release 步骤，避免并发创建/更新同一个 release 导致 race condition
+    # （GitHub Release API 只允许一个创建成功，并发会导致部分 jar 无法附加）
+    # 同一 base-version 的 test-* tag 共享同一组串行执行；不同 base-version 互不影响
+    concurrency:
+      group: release-${{ startsWith(github.ref_name, 'test-') && 'test' || github.ref_name }}
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v6
