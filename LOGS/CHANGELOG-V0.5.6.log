@@ -1,0 +1,9 @@
+v0.5.6 - 2025-07-25
+
+[Bug Fix]
+- 修复 1.21.1 选区透视关闭无效的问题（用 RenderSystem 替代 GL11 控制 depth test）
+- 修复 1.21.1 和 1.21.11 缺少半透明白色侧面渲染的问题
+- 每次 malilib 调用前重新设置 depth test 状态，避免 malilib 内部 RenderType 覆盖
+
+[Note]
+- 1.21.11 的区域轮廓受 malilib 0.27.0 限制仍始终透视（renderAreaOutline 内部固定 NO_DEPTH_NO_CULL）
