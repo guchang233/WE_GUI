@@ -288,8 +288,13 @@ public final class LitematicaBridge {
             BlockPos pos1 = corners.pos1();
             BlockPos pos2 = corners.pos2() != null ? corners.pos2() : pos1;
 
+            // 深度测试：开启时显式 glEnable（RenderUtils 不管理 depth test，
+            // 而 onRenderWorldLast 阶段 depth test 可能已被渲染管线 disable）；
+            // 关闭时显式 glDisable，让线穿过方块可见（透视）。
             boolean depthTest = Configs.Generic.SELECTION_BOX_DEPTH_TEST.getBooleanValue();
-            if (!depthTest) {
+            if (depthTest) {
+                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            } else {
                 org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
             }
 
@@ -299,9 +304,8 @@ public final class LitematicaBridge {
             RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER);
             RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER);
 
-            if (!depthTest) {
-                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
-            }
+            // 恢复 depth test 到默认 enabled 状态，避免影响后续渲染
+            org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
         }
     }
 }
