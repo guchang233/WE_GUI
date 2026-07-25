@@ -2,10 +2,10 @@ name: Build
 
 on:
   push:
-    branches: [main, support/1.21.11]
-    tags: ["v*-26.x", "v*-1.21.11"]
+    branches: [main, support/1.21.11, support/1.21.1]
+    tags: ["v*-26.x", "v*-1.21.11", "v*-1.21.1", "test-*-26.x", "test-*-1.21.11", "test-*-1.21.1"]
   pull_request:
-    branches: [main, support/1.21.11]
+    branches: [main, support/1.21.11, support/1.21.1]
   workflow_dispatch:
 
 concurrency:
@@ -26,12 +26,15 @@ jobs:
         shell: bash
         run: |
           # 根据 ref（tag 或 branch）判断目标 MC 版本与 Java 版本
-          # tag 形如 refs/tags/v0.5.0-26.x / refs/tags/v0.5.0-1.21.11
-          # branch 形如 refs/heads/main / refs/heads/support/1.21.11
+          # tag 形如 refs/tags/v0.5.0-26.x / refs/tags/v0.5.0-1.21.11 / refs/tags/v0.5.0-1.21.1
+          #      或 refs/tags/test-1.0-26.x / refs/tags/test-1.0-1.21.11 / refs/tags/test-1.0-1.21.1
+          # branch 形如 refs/heads/main / refs/heads/support/1.21.11 / refs/heads/support/1.21.1
           REF="${GITHUB_REF}"
           if [[ "$REF" == refs/tags/*-26.x ]] || [[ "$REF" == refs/heads/main ]]; then
             echo "java=25" >> "$GITHUB_OUTPUT"
           elif [[ "$REF" == refs/tags/*-1.21.11 ]] || [[ "$REF" == refs/heads/support/1.21.11 ]]; then
+            echo "java=21" >> "$GITHUB_OUTPUT"
+          elif [[ "$REF" == refs/tags/*-1.21.1 ]] || [[ "$REF" == refs/heads/support/1.21.1 ]]; then
             echo "java=21" >> "$GITHUB_OUTPUT"
           else
             # 兜底：从 gradle.properties 读取 minecraft_version 推断
@@ -66,7 +69,7 @@ jobs:
           retention-days: 7
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/test-')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -81,12 +84,14 @@ jobs:
         id: parse
         shell: bash
         run: |
-          # tag 形如 v0.5.0-26.x / v0.5.0-1.21.11
-          # base-version: v0.5.0（去掉 -26.x / -1.21.11 后缀，用作同一个 release 的 tag_name）
+          # tag 形如 v0.5.0-26.x / v0.5.0-1.21.11 / v0.5.0-1.21.1
+          #      或 test-1.0-26.x / test-1.0-1.21.11 / test-1.0-1.21.1
+          # base-version: v0.5.0 或 test-1.0（去掉 -26.x / -1.21.11 / -1.21.1 后缀，用作同一个 release 的 tag_name）
           # mc-version:   Modrinth game-versions
-          # jar-suffix:   jar 文件名后缀，便于在同一个 release 中区分两个构建
+          # jar-suffix:   jar 文件名后缀，便于在同一个 release 中区分多个构建
+          # is-test:      test-* tag 跳过 Modrinth 发布
           TAG="${GITHUB_REF_NAME}"
-          BASE_VERSION=$(echo "$TAG" | sed -E 's/-(26\.x|1\.21\.11)$//')
+          BASE_VERSION=$(echo "$TAG" | sed -E 's/-(26\.x|1\.21\.11|1\.21\.1)$//')
           if echo "$TAG" | grep -qE -- '-26\.x$'; then
             MC_VERSION="26.2"
             JAR_SUFFIX="26.2"
@@ -95,15 +100,25 @@ jobs:
             MC_VERSION="1.21.11"
             JAR_SUFFIX="1.21.11"
             JAVA_VER="21"
+          elif echo "$TAG" | grep -qE -- '-1\.21\.1$'; then
+            MC_VERSION="1.21.1"
+            JAR_SUFFIX="1.21.1"
+            JAVA_VER="21"
           else
-            echo "Unknown tag format: $TAG (expected v<version>-26.x or v<version>-1.21.11)"
+            echo "Unknown tag format: $TAG (expected v<version>-26.x / v<version>-1.21.11 / v<version>-1.21.1, or test-<version>-26.x etc.)"
             exit 1
+          fi
+          if echo "$TAG" | grep -qE -- '^test-'; then
+            IS_TEST="true"
+          else
+            IS_TEST="false"
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "base-version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
           echo "mc-version=$MC_VERSION" >> "$GITHUB_OUTPUT"
           echo "jar-suffix=$JAR_SUFFIX" >> "$GITHUB_OUTPUT"
           echo "java-ver=$JAVA_VER" >> "$GITHUB_OUTPUT"
+          echo "is-test=$IS_TEST" >> "$GITHUB_OUTPUT"
 
       - name: Read changelog
         id: changelog
@@ -153,7 +168,8 @@ jobs:
           ls -la *.jar
 
       - name: Create/update shared release
-        # 两个 tag（v0.5.0-26.x 与 v0.5.0-1.21.11）共用同一个 release（tag_name = base-version，如 v0.5.0）
+        # 多个 tag（如 v0.5.0-26.x / v0.5.0-1.21.11 / v0.5.0-1.21.1）共用同一个 release（tag_name = base-version，如 v0.5.0）
+        # test-* tag 同理（如 test-1.0-26.x / test-1.0-1.21.11 / test-1.0-1.21.1 共享 test-1.0 release）
         # softprops/action-gh-release 在 release 已存在时会自动追加文件而非覆盖
         uses: softprops/action-gh-release@v3
         with:
@@ -164,7 +180,7 @@ jobs:
           generate_release_notes: ${{ steps.changelog.outputs.found != 'true' }}
 
       - name: Publish to Modrinth (26.x)
-        if: steps.parse.outputs.mc-version == '26.2'
+        if: steps.parse.outputs.mc-version == '26.2' && steps.parse.outputs.is-test != 'true'
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
@@ -186,7 +202,27 @@ jobs:
           fail-mode: warn
 
       - name: Publish to Modrinth (1.21.11)
-        if: steps.parse.outputs.mc-version == '1.21.11'
+        if: steps.parse.outputs.mc-version == '1.21.11' && steps.parse.outputs.is-test != 'true'
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: "*.jar"
+          name: WeGui ${{ steps.parse.outputs.tag }}
+          version: ${{ steps.parse.outputs.tag }}
+          version-type: release
+          changelog: ${{ steps.changelog.outputs.changelog }}
+          loaders: fabric
+          game-versions: ${{ steps.parse.outputs.mc-version }}
+          dependencies: |
+            fabric-api(required){modrinth:P7dR8mSH}
+            worldedit(optional){modrinth:1u6JkXh5}
+          java: |
+            21
+          fail-mode: warn
+
+      - name: Publish to Modrinth (1.21.1)
+        if: steps.parse.outputs.mc-version == '1.21.1' && steps.parse.outputs.is-test != 'true'
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: ${{ vars.MODRINTH_PROJECT_ID }}
