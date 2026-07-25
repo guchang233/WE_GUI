@@ -133,11 +133,11 @@
   "wegui.mode.title": "WE Tool Mode",
   "wegui.mode.tool": "Tool: %s",
   "wegui.mode.current": "Mode: %s",
-  "wegui.mode.normal": "Normal Mode",
+  "wegui.mode.place": "Place Mode",
   "wegui.mode.edit_selection": "Edit Selection",
   "wegui.mode.move_paste_preview": "Move Paste Position",
   "wegui.mode.unknown_tool": "Unknown Tool",
-  "wegui.mode.hint.normal": "Ctrl+Scroll to switch mode",
+  "wegui.mode.hint.place": "Right-click block to place paste preview | Ctrl+Scroll to switch mode",
   "wegui.mode.hint.edit": "Alt+Scroll to move corner",
   "wegui.mode.hint.move_paste_preview": "Alt+Scroll to move preview",
 

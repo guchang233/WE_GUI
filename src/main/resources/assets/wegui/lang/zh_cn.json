@@ -133,11 +133,11 @@
   "wegui.mode.title": "WE 工具模式",
   "wegui.mode.tool": "工具: %s",
   "wegui.mode.current": "模式: %s",
-  "wegui.mode.normal": "正常模式",
+  "wegui.mode.place": "放置模式",
   "wegui.mode.edit_selection": "编辑选区",
   "wegui.mode.move_paste_preview": "移动粘贴位置",
   "wegui.mode.unknown_tool": "未知工具",
-  "wegui.mode.hint.normal": "Ctrl+滚轮 切换模式",
+  "wegui.mode.hint.place": "右键方块放置粘贴预览 | Ctrl+滚轮 切换模式",
   "wegui.mode.hint.edit": "Alt+滚轮 移动选点",
   "wegui.mode.hint.move_paste_preview": "Alt+滚轮 移动预览位置",
 

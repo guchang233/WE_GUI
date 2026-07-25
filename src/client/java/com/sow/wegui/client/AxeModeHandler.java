@@ -27,7 +27,7 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * WE 绑定工具多模式控制：
- * - 正常模式：保持 WorldEdit 默认行为（左键 pos1，右键 pos2）
+ * - 放置模式：左键 pos1（保留 WE 选区），右键方块 = 把粘贴预览同步到该方块并执行 //paste
  * - 编辑选区模式：Alt+滚轮 向玩家朝向挪动上一次修改的选点
  * - 移动粘贴预览模式：Alt+滚轮 移动 Litematica 同步预览的原点
  *
@@ -37,7 +37,7 @@ public final class AxeModeHandler {
     private AxeModeHandler() {}
 
     public enum AxeMode {
-        NORMAL("wegui.mode.normal"),
+        PLACE("wegui.mode.place"),
         EDIT_SELECTION("wegui.mode.edit_selection"),
         MOVE_PASTE_PREVIEW("wegui.mode.move_paste_preview");
 
@@ -60,7 +60,7 @@ public final class AxeModeHandler {
         NONE, POS1, POS2
     }
 
-    private static AxeMode currentMode = AxeMode.NORMAL;
+    private static AxeMode currentMode = AxeMode.PLACE;
     private static LastModifiedCorner lastModified = LastModifiedCorner.NONE;
     private static BlockPos pastePreviewOffset = BlockPos.ZERO;
     private static Item cachedWandItem;
@@ -92,13 +92,21 @@ public final class AxeModeHandler {
             return InteractionResult.PASS;
         });
 
-        // 右键方块：移动 paste 预览模式下禁用 WorldEdit 默认 pos2 行为
+        // 右键方块：
+        // - 放置模式：把粘贴预览同步到右键方块并执行 //paste
+        // - 移动 paste 预览模式：禁用 WorldEdit 默认 pos2 行为
         UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
             if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
                 return InteractionResult.PASS;
             }
 
             if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
+                return InteractionResult.SUCCESS;
+            }
+
+            if (currentMode == AxeMode.PLACE) {
+                BlockPos target = hitResult.getBlockPos();
+                pasteAtTarget(player, target);
                 return InteractionResult.SUCCESS;
             }
 
@@ -170,6 +178,33 @@ public final class AxeModeHandler {
      */
     public static void executePasteAtPreview(LocalPlayer player) {
         pasteAtPreview(player);
+    }
+
+    /**
+     * 放置模式下：把粘贴预览同步到 target 方块并执行 //paste。
+     * - 同步预览原点到 target（让 Litematica 渲染立即移动到该方块）
+     * - 在 target 位置执行 WorldEdit 粘贴
+     */
+    private static void pasteAtTarget(LocalPlayer player, BlockPos target) {
+        if (!WorldEditBridge.canUseDirectPaste()) {
+            player.sendOverlayMessage(Component.translatable("wegui.message.fixed_mode_multiplayer_disabled").withStyle(ChatFormatting.RED));
+            return;
+        }
+        if (!hasClipboard()) {
+            player.sendOverlayMessage(Component.translatable("wegui.message.fixed_mode_no_clipboard").withStyle(ChatFormatting.RED));
+            return;
+        }
+
+        // 同步预览原点到 target，让 Litematica 渲染立即移动到该方块
+        setFixedOrigin(target);
+
+        WeGuiMod.LOGGER.info("[WE GUI] 放置模式 paste 到 {}", target);
+        boolean success = WorldEditBridge.pasteClipboardAt(player, target);
+        if (success) {
+            player.sendOverlayMessage(Component.translatable("wegui.message.paste_success", formatPos(target)).withStyle(ChatFormatting.GREEN));
+        } else {
+            player.sendOverlayMessage(Component.translatable("wegui.message.paste_failed").withStyle(ChatFormatting.RED));
+        }
     }
 
     // ---- 固定放置模式状态访问 ----
