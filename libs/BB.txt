@@ -1,0 +1,51 @@
+﻿javap.exe : Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStoreType=WINDOWS-ROOT
+At line:15 char:6939
++ ... 98-v2.jar"; & $javap -p -classpath $jar com.mojang.blaze3d.vertex.Buf ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Picked up JAVA_...pe=WINDOWS-ROOT:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Compiled from "BufferBuilder.java"
+public class com.mojang.blaze3d.vertex.BufferBuilder implements com.mojang.blaze3d.vertex.VertexConsumer {
+  private static final int MAX_VERTEX_COUNT;
+  private static final long NOT_BUILDING;
+  private static final long UNKNOWN_ELEMENT;
+  private static final boolean IS_LITTLE_ENDIAN;
+  private final com.mojang.blaze3d.vertex.ByteBufferBuilder buffer;
+  private long vertexPointer;
+  private int vertices;
+  private final com.mojang.blaze3d.vertex.VertexFormat format;
+  private final com.mojang.blaze3d.vertex.VertexFormat$Mode mode;
+  private final boolean fastFormat;
+  private final boolean fullFormat;
+  private final int vertexSize;
+  private final int initialElementsToFill;
+  private final int[] offsetsByElement;
+  private int elementsToFill;
+  private boolean building;
+  public com.mojang.blaze3d.vertex.BufferBuilder(com.mojang.blaze3d.vertex.ByteBufferBuilder, com.mojang.blaze3d.vertex.VertexFormat$Mode, com.mojang.blaze3d.vertex.VertexFormat);
+  public com.mojang.blaze3d.vertex.MeshData build();
+  public com.mojang.blaze3d.vertex.MeshData buildOrThrow();
+  private void ensureBuilding();
+  private com.mojang.blaze3d.vertex.MeshData storeMesh();
+  private long beginVertex();
+  private long beginElement(com.mojang.blaze3d.vertex.VertexFormatElement);
+  private void endLastVertex();
+  private static void putRgba(long, int);
+  private static void putPackedUv(long, int);
+  public com.mojang.blaze3d.vertex.VertexConsumer addVertex(float, float, float);
+  public com.mojang.blaze3d.vertex.VertexConsumer setColor(int, int, int, int);
+  public com.mojang.blaze3d.vertex.VertexConsumer setColor(int);
+  public com.mojang.blaze3d.vertex.VertexConsumer setUv(float, float);
+  public com.mojang.blaze3d.vertex.VertexConsumer setUv1(int, int);
+  public com.mojang.blaze3d.vertex.VertexConsumer setOverlay(int);
+  public com.mojang.blaze3d.vertex.VertexConsumer setUv2(int, int);
+  public com.mojang.blaze3d.vertex.VertexConsumer setLight(int);
+  private com.mojang.blaze3d.vertex.VertexConsumer uvShort(short, short, com.mojang.blaze3d.vertex.VertexFormatElement);
+  public com.mojang.blaze3d.vertex.VertexConsumer setNormal(float, float, float);
+  public com.mojang.blaze3d.vertex.VertexConsumer setLineWidth(float);
+  private static byte normalIntValue(float);
+  public void addVertex(float, float, float, int, float, float, int, int, float, float, float);
+  static {};
+}
+

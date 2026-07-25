@@ -37,9 +37,11 @@ import java.util.Map;
  * litematica 0.19.61 的 OverlayRenderer.BoxType 为 package-private 无法外部访问，
  * 因此直接调用 malilib 公开的 RenderUtils.renderAreaOutline + renderBlockOutline。
  *
- * 选区边框深度测试（selectionBoxDepthTest）：
- *   关闭 → 禁用深度测试，线穿过方块可见（透视）
- *   开启（默认）→ 启用深度测试，线被方块遮挡（不透视）
+ * 边框透视（selectionBoxThroughView）：
+ *   true  → 边框穿过世界方块可见（透视/x-ray）
+ *   false → 边框被世界方块遮挡（不透视，默认）
+ * 1.21.1 的 malilib 0.21.10 renderBlockOutline 没有 throughView 参数，需通过 GL11 控制 depth test。
+ * 0.21.10 用老式 RenderSystem 渲染，不会覆盖 GL 状态，GL11 控制有效。
  */
 public final class LitematicaBridge {
     private static final String WEGUI_PLACEMENT_NAME = "WeGui Clipboard Sync";
@@ -262,7 +264,11 @@ public final class LitematicaBridge {
      * 需要额外传入 Minecraft 参数，使用 util.Color4f（非 util.data.Color4f）。
      * 参数语义（与 Litematica OverlayRenderer.renderSelectionBox AREA_SELECTED 分支保持一致）：
      *   - 区域轮廓线宽 1.5f，三轴颜色 X=红/Y=绿/Z=蓝
-     *   - 角点方块边框 expand=0.001f（避免 Z-fighting），线宽 2.0f，白色 */
+     *   - 角点方块边框 expand=0.001f（避免 Z-fighting），线宽 2.0f，白色
+     *
+     * 边框透视（selectionBoxThroughView）：
+     *   - malilib 0.21.10 renderBlockOutline 无 throughView 参数，通过 GL11 控制 depth test 切换透视。
+     *   - 0.21.10 用老式 RenderSystem，不会覆盖 GL 状态，GL11 调用有效。 */
     private static final class WeSelectionRenderer implements IRenderer {
         private static final Color4f COLOR_X = new Color4f(1.0f, 0.0625f, 0.0625f);
         private static final Color4f COLOR_Y = new Color4f(0.0625f, 1.0f, 0.0625f);
@@ -276,31 +282,32 @@ public final class LitematicaBridge {
             if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) return;
 
             WorldEditBridge.PartialCornerPositions corners = WorldEditBridge.getPartialSelectionCorners(mc);
-            if (corners == null || corners.pos1() == null) {
-                return;
-            }
+            if (corners == null || corners.pos1() == null) return;
 
             BlockPos pos1 = corners.pos1();
             BlockPos pos2 = corners.pos2() != null ? corners.pos2() : pos1;
 
-            // 深度测试：开启时显式 glEnable（RenderUtils 不管理 depth test，
-            // 而 onRenderWorldLast 阶段 depth test 可能已被渲染管线 disable）；
-            // 关闭时显式 glDisable，让线穿过方块可见（透视）。
-            boolean depthTest = Configs.Generic.SELECTION_BOX_DEPTH_TEST.getBooleanValue();
-            if (depthTest) {
-                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
-            } else {
+            // 边框透视：true=禁用 depth test（线穿过方块可见），false=启用 depth test（被方块遮挡，默认）
+            // 0.21.10 不覆盖 GL 状态，渲染前后显式切换 depth test 即可控制透视。
+            boolean throughView = Configs.Generic.SELECTION_BOX_THROUGH_VIEW.getBooleanValue();
+            if (throughView) {
                 org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
             }
 
-            // 区域轮廓（三轴颜色，与 Litematica AREA_SELECTED 行为一致）
-            RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z, mc);
-            // 两个角点方块边框
-            RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, mc);
-            RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, mc);
-
-            // 恢复 depth test 到默认 enabled 状态，避免影响后续渲染
-            org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            try {
+                RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z, mc);
+                RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, mc);
+                if (corners.pos2() != null) {
+                    RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, mc);
+                }
+            } catch (Throwable ex) {
+                WeGuiMod.LOGGER.error("[WeGui] selection box render failed", ex);
+            } finally {
+                // 恢复 depth test 到默认 enabled 状态，避免影响后续渲染
+                if (throughView) {
+                    org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+                }
+            }
         }
     }
 }

@@ -1,0 +1,14 @@
+﻿javap.exe : Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStoreType=WINDOWS-ROOT
+At line:15 char:6712
++ ... javap.exe"; & $javap -p -classpath "e:\MOD_CODE\MIX\libs\_tmp_malilib ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Picked up JAVA_...pe=WINDOWS-ROOT:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Compiled from "IMixinBufferBuilder.java"
+public interface fi.dy.masa.malilib.mixin.render.IMixinBufferBuilder {
+  public abstract boolean malilib_isBuilding();
+  public abstract int malilib_getVertexCount();
+  public abstract long malilib_getVertexPointer();
+}
+
