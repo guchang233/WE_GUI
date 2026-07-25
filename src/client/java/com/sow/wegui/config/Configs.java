@@ -46,6 +46,7 @@ public class Configs implements IConfigHandler {
         public static final ConfigBooleanHotkeyed PASTE_PREVIEW_ENABLED = new ConfigBooleanHotkeyed("pastePreviewEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed SELECTION_BOUNDS_ENABLED = new ConfigBooleanHotkeyed("selectionBoundsEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed SELECTION_MESSAGE_ENABLED = new ConfigBooleanHotkeyed("selectionMessageEnabled", false, "").apply(GENERIC_KEY);
+        public static final ConfigBoolean SELECTION_BOX_DEPTH_TEST = new ConfigBoolean("selectionBoxDepthTest", true).apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed BLOCK_OUTLINE_ENABLED = new ConfigBooleanHotkeyed("blockOutlineEnabled", false, "").apply(GENERIC_KEY);
         public static final ConfigBooleanHotkeyed BLOCK_VERIFICATION_ENABLED = new ConfigBooleanHotkeyed("blockVerificationEnabled", true, "").apply(GENERIC_KEY);
         public static final ConfigString WAND_ITEM = new ConfigString("wandItem", "minecraft:wooden_axe").apply(GENERIC_KEY);
@@ -55,6 +56,7 @@ public class Configs implements IConfigHandler {
                 PASTE_PREVIEW_ENABLED,
                 SELECTION_BOUNDS_ENABLED,
                 SELECTION_MESSAGE_ENABLED,
+                SELECTION_BOX_DEPTH_TEST,
                 BLOCK_OUTLINE_ENABLED,
                 BLOCK_VERIFICATION_ENABLED,
                 WAND_ITEM

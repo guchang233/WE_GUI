@@ -35,10 +35,14 @@ import java.util.Map;
 /**
  * 把 WorldEdit 剪贴板与选区同步到 Litematica 的渲染系统。
  * - 剪贴板：通过 SchematicPlacementManager 注入 placement，Litematica 自动渲染 ghost blocks 与 mismatch
- * - 选区框：在 malilib onRenderWorldLastAdvanced 中调用 OverlayRenderer.renderSelectionBox
+ * - 选区框：在 malilib onRenderWorldLastAdvanced 中调用 RenderUtils.renderAreaOutline + renderBlockOutline
  *
  * 1.21.11 适配：malilib 0.27.x 的 IRenderer 接口方法为 onRenderWorldLastAdvanced，
  * 签名 (RenderTarget, Matrix4f posMatrix, Matrix4f projMatrix, Frustum, Camera, RenderBuffers, ProfilerFiller)。
+ *
+ * 选区边框深度测试（selectionBoxDepthTest）：
+ *   关闭 → 禁用深度测试，线穿过方块可见（透视）
+ *   开启（默认）→ 启用深度测试，线被方块遮挡（不透视）
  */
 public final class LitematicaBridge {
     private static final String WEGUI_PLACEMENT_NAME = "WeGui Clipboard Sync";
@@ -284,11 +288,20 @@ public final class LitematicaBridge {
             BlockPos pos1 = corners.pos1();
             BlockPos pos2 = corners.pos2() != null ? corners.pos2() : pos1;
 
+            boolean depthTest = Configs.Generic.SELECTION_BOX_DEPTH_TEST.getBooleanValue();
+            if (!depthTest) {
+                org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            }
+
             // 区域轮廓（三轴颜色，与 Litematica AREA_SELECTED 行为一致）
             RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
             // 两个角点方块边框
             RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER);
             RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER);
+
+            if (!depthTest) {
+                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+            }
         }
     }
 }
