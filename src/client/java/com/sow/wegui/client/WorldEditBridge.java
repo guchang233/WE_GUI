@@ -270,7 +270,12 @@ public final class WorldEditBridge {
 
     /**
      * 获取 WorldEdit 选区中已经设置过的角点，允许只设置了一个点。
-     * 仅对 CuboidRegionSelector 有效；pos2 可能为 null。
+     * 仅对 CuboidRegionSelector 有效；pos1/pos2 可能为 null（未设置时）。
+     *
+     * 注意：CuboidRegionSelector 内部的 CuboidRegion 在构造时把 pos1/pos2 初始化为
+     * BlockVector3.ZERO（而非 null），所以 getIncompleteRegion().getPos1()/getPos2()
+     * 在未设置时返回 (0,0,0) 而非 null。必须用 isDefined() 判断两点是否都已设置，
+     * 未完全定义时改用反射读取 CuboidRegionSelector.position1/position2 字段（可能为 null）。
      */
     @Nullable
     public static PartialCornerPositions getPartialSelectionCorners(Minecraft mc) {
@@ -283,13 +288,36 @@ public final class WorldEditBridge {
             RegionSelector selector = session.getRegionSelector(weWorld);
             if (!(selector instanceof CuboidRegionSelector cuboidSelector)) return null;
 
-            CuboidRegion incomplete = cuboidSelector.getIncompleteRegion();
-            if (incomplete == null) return null;
-            BlockVector3 p1 = incomplete.getPos1();
-            BlockVector3 p2 = incomplete.getPos2();
+            BlockVector3 p1;
+            BlockVector3 p2;
+            if (selector.isDefined()) {
+                // 两点都已设置：getIncompleteRegion() 的 pos1/pos2 是真实值
+                CuboidRegion incomplete = cuboidSelector.getIncompleteRegion();
+                if (incomplete == null) return null;
+                p1 = incomplete.getPos1();
+                p2 = incomplete.getPos2();
+            } else {
+                // 未完全定义：region 的 pos1/pos2 可能仍是 ZERO（未设置），用反射读取原始字段
+                p1 = readSelectorPositionField(cuboidSelector, "position1");
+                p2 = readSelectorPositionField(cuboidSelector, "position2");
+            }
+
+            if (p1 == null && p2 == null) return null;
             return new PartialCornerPositions(
                     p1 == null ? null : new BlockPos(p1.x(), p1.y(), p1.z()),
                     p2 == null ? null : new BlockPos(p2.x(), p2.y(), p2.z()));
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /** 反射读取 CuboidRegionSelector 的 position1/position2 字段（未设置时为 null）。 */
+    @Nullable
+    private static BlockVector3 readSelectorPositionField(CuboidRegionSelector selector, String fieldName) {
+        try {
+            java.lang.reflect.Field f = CuboidRegionSelector.class.getDeclaredField(fieldName);
+            f.setAccessible(true);
+            return (BlockVector3) f.get(selector);
         } catch (Throwable e) {
             return null;
         }

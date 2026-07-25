@@ -15,6 +15,8 @@ import fi.dy.masa.litematica.selection.AreaSelection;
 import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.malilib.event.RenderEventHandler;
 import fi.dy.masa.malilib.interfaces.IRenderer;
+import fi.dy.masa.malilib.render.MaLiLibPipelines;
+import fi.dy.masa.malilib.render.RenderContext;
 import fi.dy.masa.malilib.render.RenderUtils;
 import fi.dy.masa.malilib.util.data.Color4f;
 import net.minecraft.client.Minecraft;
@@ -274,6 +276,9 @@ public final class LitematicaBridge {
         private static final Color4f COLOR_Y = new Color4f(0.0625f, 1.0f, 0.0625f);
         private static final Color4f COLOR_Z = new Color4f(0.0625f, 0.0625f, 1.0f);
         private static final Color4f COLOR_CORNER = new Color4f(1.0f, 1.0f, 1.0f);
+        // 侧面半透明白色（与 Litematica AREA_SELECTED 的 colorArea + alpha 0.4 一致）
+        private static final Color4f COLOR_AREA_SIDES = new Color4f(1.0f, 1.0f, 1.0f, 0.4f);
+        private static final float LINE_WIDTH = 1.5f;
 
         @Override
         public void onRenderWorldLast(RenderTarget renderTarget,
@@ -289,16 +294,52 @@ public final class LitematicaBridge {
             if (!Configs.Generic.PASTE_PREVIEW_ENABLED.getBooleanValue()) return;
 
             WorldEditBridge.PartialCornerPositions corners = WorldEditBridge.getPartialSelectionCorners(mc);
-            if (corners == null || corners.pos1() == null) return;
+            if (corners == null) return;
 
             BlockPos pos1 = corners.pos1();
-            BlockPos pos2 = corners.pos2() != null ? corners.pos2() : pos1;
+            BlockPos pos2 = corners.pos2();
+            boolean hasPos1 = pos1 != null;
+            boolean hasPos2 = pos2 != null;
+            // 两点都未设：无选区可渲染
+            if (!hasPos1 && !hasPos2) return;
+            // 只设了一个点：只渲染该点的单方块白色边框，不画区域轮廓
+            if (hasPos1 != hasPos2) {
+                BlockPos only = hasPos1 ? pos1 : pos2;
+                boolean throughView = Configs.Generic.SELECTION_BOX_THROUGH_VIEW.getBooleanValue();
+                try {
+                    RenderUtils.renderBlockOutline(only, 0.001f, 2.0f, COLOR_CORNER, throughView);
+                } catch (Throwable ex) {
+                    WeGuiMod.LOGGER.error("[WeGui] renderBlockOutline (single) failed", ex);
+                }
+                return;
+            }
 
+            // 两点都已设：渲染完整长方体选区（侧面 + 区域轮廓 + 两个角点方块边框）
             boolean throughView = Configs.Generic.SELECTION_BOX_THROUGH_VIEW.getBooleanValue();
 
-            // 区域轮廓（三轴颜色，malilib 内部固定 NO_DEPTH_NO_CULL 始终透视，不受开关影响）
+            // 侧面半透明白色面（throughView=true 透视，false 不透视）
+            // malilib renderAreaSides 的 throughView 参数只控制顶点排序，不控制深度测试
+            // （两个 pipeline 都是 LEQUAL_DEPTH，始终被方块遮挡）。因此透视模式需自己用
+            // NO_DEPTH_NO_CULL pipeline 渲染。
             try {
-                RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
+                if (throughView) {
+                    renderAreaSidesThrough(pos1, pos2);
+                } else {
+                    RenderUtils.renderAreaSides(pos1, pos2, COLOR_AREA_SIDES);
+                }
+            } catch (Throwable ex) {
+                WeGuiMod.LOGGER.error("[WeGui] renderAreaSides failed", ex);
+            }
+
+            // 区域轮廓（三色线条）
+            // malilib renderAreaOutline 内部硬编码 NO_DEPTH_NO_CULL（始终透视，无法关闭）。
+            // 不透视模式需自己用 LEQUAL_DEPTH pipeline 渲染。
+            try {
+                if (throughView) {
+                    RenderUtils.renderAreaOutline(pos1, pos2, LINE_WIDTH, COLOR_X, COLOR_Y, COLOR_Z);
+                } else {
+                    renderAreaOutlineDepth(pos1, pos2);
+                }
             } catch (Throwable ex) {
                 WeGuiMod.LOGGER.error("[WeGui] renderAreaOutline failed", ex);
             }
@@ -306,12 +347,115 @@ public final class LitematicaBridge {
             // 角点方块边框（throughView=true 透视，false 不透视）
             try {
                 RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, throughView);
-                if (corners.pos2() != null) {
-                    RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, throughView);
-                }
+                RenderUtils.renderBlockOutline(pos2, 0.001f, 2.0f, COLOR_CORNER, throughView);
             } catch (Throwable ex) {
                 WeGuiMod.LOGGER.error("[WeGui] renderBlockOutline failed", ex);
             }
+        }
+
+        /**
+         * 透视模式渲染选区六个半透明面：用 NO_DEPTH_NO_CULL pipeline（无深度测试、无背面剔除），
+         * 面穿过世界方块可见。仿 malilib renderAreaSidesBatched 的几何计算（expand 0.002 避免 Z-fighting）。
+         */
+        private static void renderAreaSidesThrough(BlockPos pos1, BlockPos pos2) {
+            net.minecraft.world.phys.Vec3 cam = RenderUtils.camPos();
+            double expand = 0.002;
+            float minX = (float) (Math.min(pos1.getX(), pos2.getX()) - cam.x - expand);
+            float minY = (float) (Math.min(pos1.getY(), pos2.getY()) - cam.y - expand);
+            float minZ = (float) (Math.min(pos1.getZ(), pos2.getZ()) - cam.z - expand);
+            float maxX = (float) (Math.max(pos1.getX(), pos2.getX()) + 1.0 - cam.x + expand);
+            float maxY = (float) (Math.max(pos1.getY(), pos2.getY()) + 1.0 - cam.y + expand);
+            float maxZ = (float) (Math.max(pos1.getZ(), pos2.getZ()) + 1.0 - cam.z + expand);
+
+            try (RenderContext ctx = new RenderContext(
+                    () -> "wegui_area_sides_through",
+                    MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT_NO_DEPTH_NO_CULL, 0)) {
+                com.mojang.blaze3d.vertex.BufferBuilder b = ctx.getBuilder();
+                float r = COLOR_AREA_SIDES.r, g = COLOR_AREA_SIDES.g, bl = COLOR_AREA_SIDES.b, a = COLOR_AREA_SIDES.a;
+                // 底面 (y=minY)
+                quad(b, minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ, r, g, bl, a);
+                // 顶面 (y=maxY)
+                quad(b, minX, maxY, minZ, minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, r, g, bl, a);
+                // 北面 (z=minZ)
+                quad(b, minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ, maxX, minY, minZ, r, g, bl, a);
+                // 南面 (z=maxZ)
+                quad(b, minX, minY, maxZ, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, bl, a);
+                // 西面 (x=minX)
+                quad(b, minX, minY, minZ, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, r, g, bl, a);
+                // 东面 (x=maxX)
+                quad(b, maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, maxX, minY, maxZ, r, g, bl, a);
+                com.mojang.blaze3d.vertex.MeshData mesh = b.build();
+                if (mesh != null) {
+                    ctx.upload(mesh, false);
+                    ctx.drawPost();
+                    mesh.close();
+                }
+            } catch (Throwable ex) {
+                WeGuiMod.LOGGER.error("[WeGui] renderAreaSidesThrough draw failed", ex);
+            }
+        }
+
+        /**
+         * 不透视模式渲染三色区域轮廓线：用 LEQUAL_DEPTH pipeline（带深度测试，被方块遮挡）。
+         * 仿 malilib drawBoundingBoxEdges 实现（malilib 原方法硬编码 NO_DEPTH_NO_CULL 始终透视）。
+         */
+        private static void renderAreaOutlineDepth(BlockPos pos1, BlockPos pos2) {
+            net.minecraft.world.phys.Vec3 cam = RenderUtils.camPos();
+            float minX = (float) (Math.min(pos1.getX(), pos2.getX()) - cam.x);
+            float minY = (float) (Math.min(pos1.getY(), pos2.getY()) - cam.y);
+            float minZ = (float) (Math.min(pos1.getZ(), pos2.getZ()) - cam.z);
+            float maxX = (float) (Math.max(pos1.getX(), pos2.getX()) + 1.0 - cam.x);
+            float maxY = (float) (Math.max(pos1.getY(), pos2.getY()) + 1.0 - cam.y);
+            float maxZ = (float) (Math.max(pos1.getZ(), pos2.getZ()) + 1.0 - cam.z);
+
+            try (RenderContext ctx = new RenderContext(
+                    () -> "wegui_area_outline_depth",
+                    MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_LEQUAL_DEPTH, 0)) {
+                com.mojang.blaze3d.vertex.BufferBuilder b = ctx.getBuilder();
+                // X 方向 4 条边（红色）
+                lineVert(b, minX, minY, minZ, maxX, minY, minZ, COLOR_X);
+                lineVert(b, minX, maxY, minZ, maxX, maxY, minZ, COLOR_X);
+                lineVert(b, minX, minY, maxZ, maxX, minY, maxZ, COLOR_X);
+                lineVert(b, minX, maxY, maxZ, maxX, maxY, maxZ, COLOR_X);
+                // Y 方向 4 条边（绿色）
+                lineVert(b, minX, minY, minZ, minX, maxY, minZ, COLOR_Y);
+                lineVert(b, maxX, minY, minZ, maxX, maxY, minZ, COLOR_Y);
+                lineVert(b, minX, minY, maxZ, minX, maxY, maxZ, COLOR_Y);
+                lineVert(b, maxX, minY, maxZ, maxX, maxY, maxZ, COLOR_Y);
+                // Z 方向 4 条边（蓝色）
+                lineVert(b, minX, minY, minZ, minX, minY, maxZ, COLOR_Z);
+                lineVert(b, maxX, minY, minZ, maxX, minY, maxZ, COLOR_Z);
+                lineVert(b, minX, maxY, minZ, minX, maxY, maxZ, COLOR_Z);
+                lineVert(b, maxX, maxY, minZ, maxX, maxY, maxZ, COLOR_Z);
+                com.mojang.blaze3d.vertex.MeshData mesh = b.build();
+                if (mesh != null) {
+                    ctx.upload(mesh, false);
+                    ctx.drawPost();
+                    mesh.close();
+                }
+            } catch (Throwable ex) {
+                WeGuiMod.LOGGER.error("[WeGui] renderAreaOutlineDepth draw failed", ex);
+            }
+        }
+
+        private static void lineVert(com.mojang.blaze3d.vertex.BufferBuilder b,
+                                     float x1, float y1, float z1,
+                                     float x2, float y2, float z2,
+                                     Color4f color) {
+            b.addVertex(x1, y1, z1).setColor(color.r, color.g, color.b, color.a).setLineWidth(LINE_WIDTH);
+            b.addVertex(x2, y2, z2).setColor(color.r, color.g, color.b, color.a).setLineWidth(LINE_WIDTH);
+        }
+
+        private static void quad(com.mojang.blaze3d.vertex.BufferBuilder b,
+                                 float x1, float y1, float z1,
+                                 float x2, float y2, float z2,
+                                 float x3, float y3, float z3,
+                                 float x4, float y4, float z4,
+                                 float r, float g, float bl, float a) {
+            b.addVertex(x1, y1, z1).setColor(r, g, bl, a);
+            b.addVertex(x2, y2, z2).setColor(r, g, bl, a);
+            b.addVertex(x3, y3, z3).setColor(r, g, bl, a);
+            b.addVertex(x4, y4, z4).setColor(r, g, bl, a);
         }
     }
 }
