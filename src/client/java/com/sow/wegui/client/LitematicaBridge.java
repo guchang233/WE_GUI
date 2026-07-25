@@ -265,9 +265,10 @@ public final class LitematicaBridge {
      *   - 角点方块边框 expand=0.001f（避免 Z-fighting），线宽 2.0f，白色
      *
      * 边框透视（selectionBoxThroughView）：
-     *   - 半透明侧面：renderAreaSides 默认 LEQUAL_DEPTH（不透视），透视模式通过 RenderSystem.disableDepthTest 控制
+     *   - 半透明侧面：renderAreaSides 默认 LEQUAL_DEPTH（不透视），透视模式通过 GL11 禁用 depth test
      *   - 区域轮廓：malilib renderAreaOutline 内部固定 NO_DEPTH_NO_CULL，始终透视，无法关闭（malilib 0.27.0 限制）
-     *   - 角点方块边框：renderBlockOutline 第 5 参数 throughView 控制透视/不透视 */
+     *   - 角点方块边框：renderBlockOutline 第 5 参数 throughView 控制透视/不透视
+     * 1.21.11 的 RenderSystem 没有 enableDepthTest/disableDepthTest 方法，用 GL11 替代。 */
     private static final class WeSelectionRenderer implements IRenderer {
         private static final Color4f COLOR_X = new Color4f(1.0f, 0.0625f, 0.0625f);
         private static final Color4f COLOR_Y = new Color4f(0.0625f, 1.0f, 0.0625f);
@@ -294,8 +295,10 @@ public final class LitematicaBridge {
 
             try {
                 // 1. 半透明侧面（throughView=true 透视，false 不透视）
-                //    renderAreaSides 默认 LEQUAL_DEPTH，透视模式需 RenderSystem.disableDepthTest
-                applyDepthTest(throughView);
+                //    renderAreaSides 默认 LEQUAL_DEPTH（不透视），透视模式需 GL11 禁用 depth test
+                if (throughView) {
+                    org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+                }
                 try {
                     RenderUtils.renderAreaSides(pos1, pos2, COLOR_AREA_SIDES, posMatrix);
                 } catch (Throwable ex) {
@@ -303,8 +306,9 @@ public final class LitematicaBridge {
                 }
 
                 // 2. 区域轮廓（malilib 内部固定 NO_DEPTH_NO_CULL 始终透视，无法关闭）
-                //    透视模式下显式禁用 depth test 确保一致性
-                applyDepthTest(throughView);
+                if (throughView) {
+                    org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+                }
                 try {
                     RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
                 } catch (Throwable ex) {
@@ -312,7 +316,9 @@ public final class LitematicaBridge {
                 }
 
                 // 3. 角点方块边框（throughView=true 透视，false 不透视）
-                applyDepthTest(throughView);
+                if (throughView) {
+                    org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+                }
                 try {
                     RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, throughView);
                     if (corners.pos2() != null) {
@@ -322,17 +328,8 @@ public final class LitematicaBridge {
                     WeGuiMod.LOGGER.error("[WeGui] renderBlockOutline failed", ex);
                 }
             } finally {
-                // 恢复 depth test 到默认启用状态
-                com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
-            }
-        }
-
-        /** 根据 throughView 设置 depth test：true=禁用（透视），false=启用（不透视）。 */
-        private static void applyDepthTest(boolean throughView) {
-            if (throughView) {
-                com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
-            } else {
-                com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
+                // 恢复 depth test 到默认启用状态，避免影响后续渲染
+                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
             }
         }
     }
