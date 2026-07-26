@@ -1,9 +1,30 @@
-v0.5.6 - 2025-07-25
+v0.5.6 - 2026-07-26
 
-[Bug Fix]
-- 修复 1.21.1 选区透视关闭无效的问题（用 RenderSystem 替代 GL11 控制 depth test）
-- 修复 1.21.1 和 1.21.11 缺少半透明白色侧面渲染的问题
-- 每次 malilib 调用前重新设置 depth test 状态，避免 malilib 内部 RenderType 覆盖
+[Bug Fix - 选区渲染]
+- 修复选区边框透视（throughView）关闭无效的问题：
+  · 1.21.1：用 RenderSystem.enableDepthTest/disableDepthTest 替代 GL11，并在每次 malilib 调用前重置 depth test 状态，避免 malilib 内部 RenderType 覆盖
+  · 1.21.11：malilib 0.27.x 的 RenderSystem 无 enableDepthTest 方法，改用 GL11.glEnable/glDisable(GL_DEPTH_TEST)
+- 修复关闭透视后红绿蓝三色区域轮廓线消失的问题（1.21.11）：
+  · malilib renderAreaOutline 内部固定使用 NO_DEPTH_NO_CULL Pipeline（始终透视），无法通过外部 GL 状态关闭
+  · 新增 renderAreaOutlineLequalDepth：用 RenderContext + DEBUG_LINES_MASA_SIMPLE_LEQUAL_DEPTH Pipeline
+    + 反射调用 malilib private drawBoundingBoxLinesX/Y/Z 绘制 12 条边（每轴 4 条，红/绿/蓝三色）
+    + 完全模仿 malilib drawBoundingBoxEdges 流程（builder.build() → ctx.draw(rendered, false, true)）
+  · throughView=false 时区域轮廓线被世界方块遮挡（不再透视），throughView=true 时仍用 malilib 原方法（透视）
+- 补全 1.21.1 和 1.21.11 缺失的半透明白色侧面渲染（renderAreaSides，alpha=0.4）
 
-[Note]
-- 1.21.11 的区域轮廓受 malilib 0.27.0 限制仍始终透视（renderAreaOutline 内部固定 NO_DEPTH_NO_CULL）
+[Bug Fix - 1.21.11 构建]
+- 修复 1.21.11 build 失败：malilib 0.27.0 的 RenderSystem 没有 enableDepthTest/disableDepthTest 方法，用 GL11 替代
+
+[Bug Fix - 汉化]
+- 补充 1.21.1 malilib 缺失的汉化 key：malilib.gui.button.config.gui.tab.all = "全部"
+
+[Note - 渲染系统说明]
+- malilib 0.27.x（1.21.11）采用 RenderPipeline（非 RenderType），通过 RenderPass.setPipeline() 强制覆盖 GL 状态
+- 各渲染方法 Pipeline 行为：
+  · renderAreaSides：固定 LEQUAL_DEPTH（始终不透视）
+  · renderAreaOutline：固定 NO_DEPTH_NO_CULL（始终透视，已通过自定义 LEQUAL_DEPTH Pipeline 绕过）
+  · renderBlockOutline：第 5 参数 throughView 控制 Pipeline 选择
+- 1.21.11 BufferBuilder.build() 返回 MeshData（对应 malilib 编译时 class_9801 接口）
+
+[Known Limitation]
+- 1.21.11 开启透视时，半透明侧面（renderAreaSides）受 malilib 限制仍不透视（LEQUAL_DEPTH 固定）

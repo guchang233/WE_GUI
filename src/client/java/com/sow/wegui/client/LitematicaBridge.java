@@ -14,6 +14,8 @@ import fi.dy.masa.litematica.selection.AreaSelection;
 import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.malilib.event.RenderEventHandler;
 import fi.dy.masa.malilib.interfaces.IRenderer;
+import fi.dy.masa.malilib.render.MaLiLibPipelines;
+import fi.dy.masa.malilib.render.RenderContext;
 import fi.dy.masa.malilib.render.RenderUtils;
 import fi.dy.masa.malilib.util.data.Color4f;
 import net.minecraft.client.Camera;
@@ -24,11 +26,13 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import org.joml.Matrix4f;
 
 import javax.annotation.Nullable;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.Map;
 
@@ -294,31 +298,39 @@ public final class LitematicaBridge {
             boolean throughView = Configs.Generic.SELECTION_BOX_THROUGH_VIEW.getBooleanValue();
 
             try {
-                // 1. 半透明侧面（throughView=true 透视，false 不透视）
-                //    renderAreaSides 默认 LEQUAL_DEPTH（不透视），透视模式需 GL11 禁用 depth test
-                if (throughView) {
-                    org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
-                }
+                // 1.21.11 渲染系统说明：
+                //   malilib 0.27.16 用 RenderPipeline（不是 RenderType），通过 RenderPass.setPipeline()
+                //   强制覆盖 GL 状态（depth test / cull 等），外部 GL11/GlStateManager 调用无效。
+                //   因此只能依赖 malilib 方法自身的 Pipeline 选择来控制透视：
+                //     - renderAreaSides：内部固定 LEQUAL_DEPTH（始终不透视，无法改为透视）
+                //     - renderAreaOutline：内部固定 NO_DEPTH_NO_CULL（始终透视，无法关闭）
+                //     - renderBlockOutline(pos, ..., throughView)：根据 throughView 选择 Pipeline
+
+                // 1. 半透明侧面（malilib 固定 LEQUAL_DEPTH，始终不透视）
                 try {
                     RenderUtils.renderAreaSides(pos1, pos2, COLOR_AREA_SIDES, posMatrix);
                 } catch (Throwable ex) {
                     WeGuiMod.LOGGER.error("[WeGui] renderAreaSides failed", ex);
                 }
 
-                // 2. 区域轮廓（malilib 内部固定 NO_DEPTH_NO_CULL 始终透视，无法关闭）
+                // 2. 区域轮廓（红/绿/蓝三轴颜色的 12 条边）：
+                //    throughView=true  → malilib renderAreaOutline（NO_DEPTH_NO_CULL，透视，穿过方块可见）
+                //    throughView=false → 自定义 LEQUAL_DEPTH 渲染（被世界方块遮挡，但仍显示红绿蓝三色）
+                //    （malilib renderAreaOutline 内部固定 NO_DEPTH_NO_CULL 无法关闭透视，
+                //     故 throughView=false 时改用 RenderContext + DEBUG_LINES_MASA_SIMPLE_LEQUAL_DEPTH Pipeline
+                //     + 反射调用 malilib private drawBoundingBoxLinesX/Y/Z 实现三轴颜色的不透视轮廓）
                 if (throughView) {
-                    org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
-                }
-                try {
-                    RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
-                } catch (Throwable ex) {
-                    WeGuiMod.LOGGER.error("[WeGui] renderAreaOutline failed", ex);
+                    try {
+                        RenderUtils.renderAreaOutline(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
+                    } catch (Throwable ex) {
+                        WeGuiMod.LOGGER.error("[WeGui] renderAreaOutline failed", ex);
+                    }
+                } else {
+                    renderAreaOutlineLequalDepth(pos1, pos2, 1.5f, COLOR_X, COLOR_Y, COLOR_Z);
                 }
 
-                // 3. 角点方块边框（throughView=true 透视，false 不透视）
-                if (throughView) {
-                    org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
-                }
+                // 3. 角点方块边框（renderBlockOutline 第 5 参数 throughView 控制 Pipeline：
+                //    true → NO_DEPTH_NO_CULL 透视；false → LEQUAL_DEPTH 不透视）
                 try {
                     RenderUtils.renderBlockOutline(pos1, 0.001f, 2.0f, COLOR_CORNER, throughView);
                     if (corners.pos2() != null) {
@@ -328,9 +340,88 @@ public final class LitematicaBridge {
                     WeGuiMod.LOGGER.error("[WeGui] renderBlockOutline failed", ex);
                 }
             } finally {
-                // 恢复 depth test 到默认启用状态，避免影响后续渲染
+                // 恢复 depth test 到默认启用状态（保险起见，虽然对 RenderPipeline 无效）
                 org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
             }
+        }
+
+        /**
+         * 用 LEQUAL_DEPTH Pipeline 渲染区域轮廓（12 条边，红/绿/蓝三轴颜色），被世界方块遮挡。
+         *
+         * malilib 的 RenderUtils.renderAreaOutline 内部固定使用 NO_DEPTH_NO_CULL Pipeline（始终透视），
+         * 无法通过外部 GL11/GlStateManager 关闭透视。为实现在 throughView=false 时让轮廓线被方块遮挡，
+         * 自己创建 RenderContext 并指定 DEBUG_LINES_MASA_SIMPLE_LEQUAL_DEPTH Pipeline，然后通过反射调用
+         * malilib 的 private static 方法 drawBoundingBoxLinesX/Y/Z 画 12 条边（每轴 4 条，分别用 X/Y/Z 颜色）。
+         *
+         * 完全模仿 malilib drawBoundingBoxEdges 的精确流程：
+         *   ctx = new RenderContext(name, LEQUAL_DEPTH)
+         *   builder = ctx.getBuilder()
+         *   drawBoundingBoxLinesX/Y/Z(builder, ..., colorX/Y/Z, lineWidth)
+         *   rendered = builder.build()
+         *   ctx.draw(rendered, false, true)
+         *   rendered.close()
+         *   ctx.close()
+         */
+        private static void renderAreaOutlineLequalDepth(BlockPos pos1, BlockPos pos2,
+                                                         float lineWidth,
+                                                         Color4f colorX, Color4f colorY, Color4f colorZ) {
+            try {
+                // 用 malilib 的 camPos() 获取相机位置（避免依赖 Camera.getPosition() 的 mappings 差异）
+                Vec3 camPos = RenderUtils.camPos();
+                double minX = Math.min(pos1.getX(), pos2.getX()) - camPos.x;
+                double minY = Math.min(pos1.getY(), pos2.getY()) - camPos.y;
+                double minZ = Math.min(pos1.getZ(), pos2.getZ()) - camPos.z;
+                double maxX = Math.max(pos1.getX(), pos2.getX()) + 1.0 - camPos.x;
+                double maxY = Math.max(pos1.getY(), pos2.getY()) + 1.0 - camPos.y;
+                double maxZ = Math.max(pos1.getZ(), pos2.getZ()) + 1.0 - camPos.z;
+
+                float fMinX = (float) minX, fMinY = (float) minY, fMinZ = (float) minZ;
+                float fMaxX = (float) maxX, fMaxY = (float) maxY, fMaxZ = (float) maxZ;
+
+                RenderContext ctx = new RenderContext(
+                        () -> "wegui:renderAreaOutlineLequalDepth",
+                        MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_LEQUAL_DEPTH);
+                try {
+                    com.mojang.blaze3d.vertex.BufferBuilder builder = ctx.getBuilder();
+
+                    // 反射调用 malilib private drawBoundingBoxLinesX/Y/Z 画 12 条边
+                    Method mX = getDrawBoundingBoxLinesMethod("drawBoundingBoxLinesX");
+                    Method mY = getDrawBoundingBoxLinesMethod("drawBoundingBoxLinesY");
+                    Method mZ = getDrawBoundingBoxLinesMethod("drawBoundingBoxLinesZ");
+
+                    mX.invoke(null, builder, fMinX, fMinY, fMinZ, fMaxX, fMaxY, fMaxZ, colorX, lineWidth);
+                    mY.invoke(null, builder, fMinX, fMinY, fMinZ, fMaxX, fMaxY, fMaxZ, colorY, lineWidth);
+                    mZ.invoke(null, builder, fMinX, fMinY, fMinZ, fMaxX, fMaxY, fMaxZ, colorZ, lineWidth);
+
+                    // build() 返回 MeshData（对应 malilib 编译时的 class_9801，运行时 named mapping 重映射为 MeshData）
+                    com.mojang.blaze3d.vertex.MeshData rendered = builder.build();
+                    if (rendered != null) {
+                        // 完全模仿 malilib drawBoundingBoxEdges：ctx.draw(rendered, false, true)
+                        ctx.draw(rendered, false, true);
+                        rendered.close();
+                    }
+                } finally {
+                    ctx.close();
+                }
+            } catch (Throwable ex) {
+                WeGuiMod.LOGGER.error("[WeGui] renderAreaOutlineLequalDepth failed", ex);
+            }
+        }
+
+        /** 反射获取 malilib RenderUtils 的 private static drawBoundingBoxLinesX/Y/Z 方法。
+         *  方法签名：drawBoundingBoxLinesX(BufferBuilder, float, float, float, float, float, float, Color4f, float)
+         *  注意：malilib 这些方法是 private 的，必须 setAccessible(true) 才能调用，否则 IllegalAccessException
+         *  BufferBuilder 类型用 malilib 编译时的 class_287（运行时 named mapping 下就是 BufferBuilder） */
+        private static Method getDrawBoundingBoxLinesMethod(String methodName) throws NoSuchMethodException {
+            // malilib 编译时参数类型是 net.minecraft.class_287，运行时 Fabric loader 重映射为
+            // com.mojang.blaze3d.vertex.BufferBuilder。所以 getDeclaredMethod 用 BufferBuilder.class 查找。
+            Method m = RenderUtils.class.getDeclaredMethod(methodName,
+                    com.mojang.blaze3d.vertex.BufferBuilder.class,
+                    float.class, float.class, float.class,
+                    float.class, float.class, float.class,
+                    Color4f.class, float.class);
+            m.setAccessible(true);
+            return m;
         }
     }
 }
