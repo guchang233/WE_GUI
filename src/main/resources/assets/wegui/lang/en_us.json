@@ -42,6 +42,8 @@
   "wegui.config.paste_placement_mode.fixed": "Fixed",
   "wegui.config.paste_preview.name.pasteReplaceAirOnly": "Replace Air Blocks Only",
   "wegui.config.paste_preview.comment.pasteReplaceAirOnly": "Only place blocks from the clipboard where the target position is currently air (does not overwrite existing builds)",
+  "wegui.config.paste_preview.name.serverFeatureUnlock": "Unlock Server-Side Precise Paste",
+  "wegui.config.paste_preview.comment.serverFeatureUnlock": "⚠ WARNING: disabled by default. When enabled, precise offset pasting becomes available on multiplayer servers (move preview + //paste). Implemented as paste-at-origin followed by per-axis //move, which rewrites the whole region multiple times: slow for large builds, produces multiple undo entries, and requires the server to allow //move. There is no 3D preview in multiplayer (clipboard data lives on the server); offsets are shown as text only. Only enable this on servers you trust.",
 
   "wegui.config.mode_indicator.name.modeIndicatorEnabled": "Show Mode Indicator",
   "wegui.config.mode_indicator.comment.modeIndicatorEnabled": "Display current WE tool mode at the bottom-left",
@@ -164,6 +166,9 @@
   "wegui.message.fixed_mode_multiplayer_disabled": "[WE GUI] Fixed mode is disabled on multiplayer servers",
   "wegui.message.fixed_mode_no_clipboard": "[WE GUI] No clipboard available, cannot fix",
   "wegui.message.fixed_mode_enabled": "[WE GUI] Preview pinned. Type //paste to place here",
+  "wegui.message.server_paste_sent": "[WE GUI] Sent a %s-step precise paste plan (origin paste + moves). To undo, run //undo repeatedly (%s steps)",
+  "wegui.message.server_paste_air_only_unsupported": "[WE GUI] \"Replace air only\" is not supported for server-side precise paste; cancelled",
+  "wegui.message.server_unlock_warning": "[WE GUI] ⚠ Server-side features unlocked: this paste was executed as a multi-command plan that rewrites the region several times and creates multiple undo entries; if the server forbids //move the result will land in the wrong place. Only use this on servers you trust.",
 
   "wegui.schematic.button_in_config": "Save Schematic",
   "wegui.schematic.title": "Save Schematic",
