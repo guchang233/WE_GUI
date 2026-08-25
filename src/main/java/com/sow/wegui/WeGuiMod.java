@@ -1,7 +1,9 @@
 package com.sow.wegui;
 
 import com.sow.wegui.commands.WeCommands;
+import net.fabricmc.api.EnvType;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +17,10 @@ public class WeGuiMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        if (FabricLoader.getInstance().getEnvironmentType() != EnvType.CLIENT) {
+            LOGGER.info("[WE GUI] 非客户端环境，跳过初始化");
+            return;
+        }
         WeCommands.init();
         LOGGER.info("WorldEdit GUI loaded.");
     }
