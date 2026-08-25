@@ -81,10 +81,16 @@ public class Configs implements IConfigHandler {
     public static class PastePreview {
         public static final ConfigOptionList PASTE_PLACEMENT_MODE = new ConfigOptionList("pastePlacementMode", PastePlacementMode.FIXED).apply(PASTE_PREVIEW_KEY);
         public static final ConfigBoolean PASTE_REPLACE_AIR_ONLY = new ConfigBoolean("pasteReplaceAirOnly", false).apply(PASTE_PREVIEW_KEY);
+        /**
+         * 解锁服务端功能：多人服务器上通过命令编排（/paste -so + 逐轴 /move）实现精确偏移粘贴。
+         * 默认关闭；开启后粘贴会多次重写区域并产生多条撤销记录，需服务器允许 //move。
+         */
+        public static final ConfigBoolean SERVER_FEATURE_UNLOCK = new ConfigBoolean("serverFeatureUnlock", false).apply(PASTE_PREVIEW_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 PASTE_PLACEMENT_MODE,
-                PASTE_REPLACE_AIR_ONLY
+                PASTE_REPLACE_AIR_ONLY,
+                SERVER_FEATURE_UNLOCK
         );
     }
 

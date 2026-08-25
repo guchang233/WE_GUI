@@ -42,6 +42,8 @@
   "wegui.config.paste_placement_mode.fixed": "固定",
   "wegui.config.paste_preview.name.pasteReplaceAirOnly": "只替换空气方块",
   "wegui.config.paste_preview.comment.pasteReplaceAirOnly": "粘贴时只在目标位置当前为空气时放置方块（不会覆盖已有建筑）",
+  "wegui.config.paste_preview.name.serverFeatureUnlock": "解锁服务端精确粘贴",
+  "wegui.config.paste_preview.comment.serverFeatureUnlock": "⚠ 警告：默认关闭。开启后多人服务器上可使用精确偏移粘贴（移动预览 + //paste）。实现方式为先原位粘贴再逐轴平移选区，会多次重写整个区域：大结构耗时较长、产生多条撤销记录、需要服务器允许 //move 命令。多人模式无 3D 预览（剪贴板数据在服务器端），偏移量以提示文本为准。请仅在您信任的服务器上开启。",
 
   "wegui.config.mode_indicator.name.modeIndicatorEnabled": "显示模式栏",
   "wegui.config.mode_indicator.comment.modeIndicatorEnabled": "在左下角显示当前 WE 工具模式",
@@ -167,6 +169,9 @@
   "wegui.message.fixed_mode_multiplayer_disabled": "[WE GUI] 多人服务器不支持固定模式",
   "wegui.message.fixed_mode_no_clipboard": "[WE GUI] 无剪贴板，无法固定",
   "wegui.message.fixed_mode_enabled": "[WE GUI] 已固定预览位置，输入 //paste 在此位置粘贴",
+  "wegui.message.server_paste_sent": "[WE GUI] 已发送 %s 步精确粘贴计划（原位粘贴 + 平移），如需撤销请逐步 //undo（共 %s 步）",
+  "wegui.message.server_paste_air_only_unsupported": "[WE GUI] “只替换空气”暂不支持服务端精确粘贴，已取消",
+  "wegui.message.server_unlock_warning": "[WE GUI] ⚠ 服务端功能已解锁：本次粘贴通过多条命令编排执行，会多次重写区域并产生多条撤销记录；若服务器禁止 //move 将粘贴在错误位置。请确认您信任当前服务器。",
 
   "wegui.schematic.button_in_config": "保存原理图",
   "wegui.schematic.title": "保存原理图",

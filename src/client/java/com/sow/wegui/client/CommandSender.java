@@ -106,6 +106,20 @@ public final class CommandSender {
         }
     }
 
+    /**
+     * 按序发送一个粘贴计划的全部命令（绕过本地拦截与偏移复位逻辑）。
+     * 命令需为单前导斜杠格式（WorldEdit Fabric 的 Brigadier 字面量自带前导 /）。
+     * 同一连接内命令按发送顺序执行；中途失败（如无 //move 权限）时后续命令仍会发出，
+     * 各步结果以服务器聊天反馈为准——这是纯客户端方案的已知限制。
+     */
+    public static void sendPlan(java.util.List<String> commands) {
+        if (commands == null || commands.isEmpty()) return;
+        for (String command : commands) {
+            WeGuiMod.LOGGER.info("[WE GUI] plan> {}", command);
+            sendRawCommand(command);
+        }
+    }
+
     private static boolean isClipboardCommand(String command) {
         String lower = command.toLowerCase();
         return lower.startsWith("//copy") || lower.startsWith("//cut") ||
