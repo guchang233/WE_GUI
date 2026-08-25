@@ -30,6 +30,9 @@ loom {
             vmArg "-Ddevauth.enabled=1"
         }
         server {
+            // 独立运行目录：避免与客户端并发运行时争抢 .fabric/processedMods 缓存，
+            // 也隔离 run/mods 内的手动测试 jar（旧版 wegui 会与源码版本重复）
+            runDir "run/server"
         }
     }
 }
