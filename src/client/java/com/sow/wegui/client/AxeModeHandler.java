@@ -348,11 +348,16 @@ public final class AxeModeHandler {
     }
 
     private static boolean handleMovePastePreviewScroll(LocalPlayer player, double scrollDelta) {
-        if (!hasClipboard() || !WorldEditBridge.canUseDirectPaste()) {
-            player.displayClientMessage(Component.translatable("wegui.message.no_clipboard_or_multiplayer").withStyle(ChatFormatting.RED), true);
-            resetPastePreviewOffset();
-            return true;
+        boolean unlocked = Configs.PastePreview.SERVER_FEATURE_UNLOCK.getBooleanValue();
+        if (!unlocked) {
+            if (!hasClipboard() || !WorldEditBridge.canUseDirectPaste()) {
+                player.displayClientMessage(Component.translatable("wegui.message.no_clipboard_or_multiplayer").withStyle(ChatFormatting.RED), true);
+                resetPastePreviewOffset();
+                return true;
+            }
         }
+        // 解锁模式下：固定模式仍不可用（多人无预览数据），仅允许累积相对偏移；
+        // 多人无法本地校验剪贴板，剪贴板为空时由服务器反馈错误。
 
         int amount = scrollDelta > 0 ? 1 : -1;
         Direction direction = getLookDirection(player);
@@ -388,7 +393,8 @@ public final class AxeModeHandler {
         for (int i = 0; i < count; i++) {
             nextOrdinal = (nextOrdinal + dir + count) % count;
             AxeMode candidate = values[nextOrdinal];
-            if (candidate == AxeMode.MOVE_PASTE_PREVIEW && !WorldEditBridge.canUseDirectPaste()) {
+            if (candidate == AxeMode.MOVE_PASTE_PREVIEW && !WorldEditBridge.canUseDirectPaste()
+                    && !Configs.PastePreview.SERVER_FEATURE_UNLOCK.getBooleanValue()) {
                 continue;
             }
             currentMode = candidate;
@@ -503,7 +509,22 @@ public final class AxeModeHandler {
         }
 
         if (!WorldEditBridge.canUseDirectPaste()) {
-            player.displayClientMessage(Component.translatable("wegui.message.move_paste_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
+            if (!Configs.PastePreview.SERVER_FEATURE_UNLOCK.getBooleanValue()) {
+                player.displayClientMessage(Component.translatable("wegui.message.move_paste_multiplayer_disabled").withStyle(ChatFormatting.RED), true);
+                return;
+            }
+
+            // 服务端功能解锁：命令编排式精确偏移粘贴（/paste -so + 逐轴 /move）
+            if (Configs.PastePreview.PASTE_REPLACE_AIR_ONLY.getBooleanValue()) {
+                player.displayClientMessage(Component.translatable("wegui.message.server_paste_air_only_unsupported").withStyle(ChatFormatting.RED), true);
+                return;
+            }
+            warnServerUnlockOnce(player);
+
+            PastePlanComposer.Plan plan = PastePlanComposer.compose(pastePreviewOffset);
+            CommandSender.sendPlan(plan.commands());
+            resetPastePreviewOffset();
+            player.displayClientMessage(Component.translatable("wegui.message.server_paste_sent", plan.commands().size(), plan.undoSteps()).withStyle(ChatFormatting.GREEN), false);
             return;
         }
 
@@ -519,6 +540,15 @@ public final class AxeModeHandler {
     private static void sendNormalPasteCommand(LocalPlayer player) {
         // WorldEdit 的 //paste 在 Brigadier 中注册为 /paste，需要保留前导 /
         CommandSender.sendRawCommand("/paste");
+    }
+
+    /** 每次游戏会话首次使用服务端精确粘贴时警告一次 */
+    private static boolean serverUnlockWarned = false;
+
+    private static void warnServerUnlockOnce(LocalPlayer player) {
+        if (serverUnlockWarned) return;
+        serverUnlockWarned = true;
+        player.displayClientMessage(Component.translatable("wegui.message.server_unlock_warning").withStyle(ChatFormatting.YELLOW), false);
     }
 
     private static String formatPos(BlockPos pos) {
