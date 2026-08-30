@@ -50,13 +50,16 @@ public class Configs implements IConfigHandler {
          *  renderAreaOutline 的区域轮廓在 malilib 内部固定使用 NO_DEPTH_NO_CULL 管线（始终透视），无法关闭。 */
         public static final ConfigBoolean SELECTION_BOX_THROUGH_VIEW = new ConfigBoolean("selectionBoxThroughView", false).apply(GENERIC_KEY);
         public static final ConfigString WAND_ITEM = new ConfigString("wandItem", "minecraft:wooden_axe").apply(GENERIC_KEY);
+        /** 调试日志：手持魔杖检测（每帧调用）等详细日志。默认关闭，避免日志文件迅速膨胀。 */
+        public static final ConfigBoolean DEBUG_LOG = new ConfigBoolean("debugLog", false).apply(GENERIC_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 STATUS_BAR_ENABLED,
                 PASTE_PREVIEW_ENABLED,
                 SELECTION_MESSAGE_ENABLED,
                 SELECTION_BOX_THROUGH_VIEW,
-                WAND_ITEM
+                WAND_ITEM,
+                DEBUG_LOG
         );
 
         public static final ImmutableList<IHotkey> TOGGLE_HOTKEYS = ImmutableList.of(

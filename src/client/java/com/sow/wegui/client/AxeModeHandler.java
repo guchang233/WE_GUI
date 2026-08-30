@@ -91,7 +91,9 @@ public final class AxeModeHandler {
         // - 移动 paste 预览模式：同上，阻止 pos1 选区
         AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
             if (level.isClientSide() && hand == InteractionHand.MAIN_HAND && isHoldingConfiguredWand(player)) {
-                WeGuiMod.LOGGER.info("[WE GUI] AttackBlockCallback mode={} pos={}", currentMode, pos);
+                if (debugLogEnabled()) {
+                    WeGuiMod.LOGGER.info("[WE GUI] AttackBlockCallback mode={} pos={}", currentMode, pos);
+                }
                 if (currentMode == AxeMode.MOVE_PASTE_PREVIEW || currentMode == AxeMode.PLACE) {
                     // FAIL: 取消 vanilla 处理且不发送 START_DESTROY_BLOCK 包到服务端
                     // (SUCCESS/CONSUME 会触发 Fabric Mixin 主动补发包，仍会触发服务端 WE 选区)
@@ -112,7 +114,9 @@ public final class AxeModeHandler {
             if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
                 return InteractionResult.PASS;
             }
-            WeGuiMod.LOGGER.info("[WE GUI] UseBlockCallback mode={} target={}", currentMode, hitResult.getBlockPos());
+            if (debugLogEnabled()) {
+                WeGuiMod.LOGGER.info("[WE GUI] UseBlockCallback mode={} target={}", currentMode, hitResult.getBlockPos());
+            }
 
             if (currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
                 return InteractionResult.FAIL;
@@ -138,7 +142,9 @@ public final class AxeModeHandler {
             if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND || !isHoldingConfiguredWand(player)) {
                 return InteractionResult.PASS;
             }
-            WeGuiMod.LOGGER.info("[WE GUI] UseItemCallback mode={}", currentMode);
+            if (debugLogEnabled()) {
+                WeGuiMod.LOGGER.info("[WE GUI] UseItemCallback mode={}", currentMode);
+            }
 
             if (currentMode == AxeMode.PLACE || currentMode == AxeMode.MOVE_PASTE_PREVIEW) {
                 // FAIL: 阻止服务端收到 UseItemPacket
@@ -402,18 +408,27 @@ public final class AxeModeHandler {
     }
 
     public static boolean isHoldingConfiguredWand(Player player) {
+        // 注意：该方法会被 HUD 渲染每帧调用，未手持魔杖时绝不输出日志（除非开启 debugLog），
+        // 否则日志文件会在几十分钟内膨胀到数十 MB。
         Item wandItem = getConfiguredWandItem();
         if (wandItem == null) {
-            WeGuiMod.LOGGER.warn("[WE GUI] isHoldingConfiguredWand: wandItem=null (id={})", Configs.Generic.WAND_ITEM.getStringValue());
+            if (debugLogEnabled()) {
+                WeGuiMod.LOGGER.warn("[WE GUI] isHoldingConfiguredWand: wandItem=null (id={})", Configs.Generic.WAND_ITEM.getStringValue());
+            }
             return false;
         }
         boolean main = player.getMainHandItem().is(wandItem);
         boolean off = player.getOffhandItem().is(wandItem);
-        if (!main && !off) {
+        if (!main && !off && debugLogEnabled()) {
             WeGuiMod.LOGGER.warn("[WE GUI] isHoldingConfiguredWand: main={}, off={}, mainItem={}, offItem={}",
                     main, off, player.getMainHandItem().getItem(), player.getOffhandItem().getItem());
         }
         return main || off;
+    }
+
+    /** 调试日志开关（配置项 debugLog，默认关闭） */
+    private static boolean debugLogEnabled() {
+        return Configs.Generic.DEBUG_LOG.getBooleanValue();
     }
 
     @Nullable
