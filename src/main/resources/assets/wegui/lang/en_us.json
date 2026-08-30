@@ -24,6 +24,8 @@
   "wegui.config.generic.comment.selectionBoxThroughView": "When enabled, selection box lines are visible through world blocks (x-ray, default off). When disabled, lines are occluded by blocks",
   "wegui.config.generic.name.wandItem": "WE Wand Item",
   "wegui.config.generic.comment.wandItem": "Item ID used as WorldEdit selection wand / mod quick-selection tool, default minecraft:wooden_axe",
+  "wegui.config.generic.name.debugLog": "Debug Logging",
+  "wegui.config.generic.comment.debugLog": "Enable logging (will cause memory bloat)",
 
   "wegui.config.status_bar.name.statusBarAnchor": "Status Bar Anchor",
   "wegui.config.status_bar.comment.statusBarAnchor": "Anchor point of the status bar on screen",

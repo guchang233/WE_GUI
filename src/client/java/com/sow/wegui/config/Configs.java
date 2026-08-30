@@ -48,13 +48,16 @@ public class Configs implements IConfigHandler {
         /** 边框透视：true=线穿过方块可见（x-ray），false=线被方块遮挡（默认）。 */
         public static final ConfigBoolean SELECTION_BOX_THROUGH_VIEW = new ConfigBoolean("selectionBoxThroughView", false).apply(GENERIC_KEY);
         public static final ConfigString WAND_ITEM = new ConfigString("wandItem", "minecraft:wooden_axe").apply(GENERIC_KEY);
+        /** 调试日志：手持魔杖检测（每帧调用）等详细日志。默认关闭，避免日志文件迅速膨胀。 */
+        public static final ConfigBoolean DEBUG_LOG = new ConfigBoolean("debugLog", false).apply(GENERIC_KEY);
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 STATUS_BAR_ENABLED,
                 PASTE_PREVIEW_ENABLED,
                 SELECTION_MESSAGE_ENABLED,
                 SELECTION_BOX_THROUGH_VIEW,
-                WAND_ITEM
+                WAND_ITEM,
+                DEBUG_LOG
         );
 
         public static final ImmutableList<IHotkey> TOGGLE_HOTKEYS = ImmutableList.of(
