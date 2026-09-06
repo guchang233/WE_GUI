@@ -60,6 +60,9 @@ jobs:
 
       - name: Build
         run: ./gradlew build --no-daemon
+        env:
+          # 1.21.11 全量构建（含 loom 反编译/remap）在默认 2G 堆下会 OOM
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4G
 
       - name: Upload JAR
         uses: actions/upload-artifact@v5
