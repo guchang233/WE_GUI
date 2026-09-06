@@ -1,12 +1,12 @@
 
 
 
-# [简体中文](README.md) | [English](README_EN.md)
+# [简体中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md)
 
 ---
 
 # Description
-Provides a GUI panel and 3D rendering of selections (similar to[Litematica](https://modrinth.com/mod/litematica)) for the WorldEdit mod, allowing you to use WorldEdit easily without having to memorize complicated commands.The mod fully supports English and Chinese.
+Provides a GUI panel and 3D rendering of selections (similar to[Litematica](https://modrinth.com/mod/litematica)) for the WorldEdit mod, allowing you to use WorldEdit easily without having to memorize complicated commands.The mod fully supports English, Chinese and Japanese.
 
 # Function
 ---
@@ -57,7 +57,7 @@ Provides a GUI panel and 3D rendering of selections (similar to[Litematica](http
 # About
 
 
-> [malilib](https://modrinth.com/mod/malilib) and [worldeidt](https://modrinth.com/plugin/worldedit) are prerequisites
+> [malilib](https://modrinth.com/mod/malilib) and [worldedit](https://modrinth.com/plugin/worldedit) are prerequisites
 
 
 ## License

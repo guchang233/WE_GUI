@@ -1,12 +1,12 @@
 
 
 
-# [简体中文](README.md) | [English](README_EN.md)
+# [简体中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md)
 
 ---
 
 # 描述
-为 WorldEdit 模组提供了一个GUI 以及剪切板所选内容的 3D 预览功能（类似于 [Litematica](https://modrinth.com/mod/litematica) 的原理图效果），让你无需记忆复杂的命令即可轻松使用 WorldEdit。该模组全面支持英语和中文。
+为 WorldEdit 模组提供了一个GUI 以及剪切板所选内容的 3D 预览功能（类似于 [Litematica](https://modrinth.com/mod/litematica) 的原理图效果），让你无需记忆复杂的命令即可轻松使用 WorldEdit。该模组全面支持英语，中文和日语。
 
 # 功能
 ---
@@ -58,7 +58,7 @@
 # 关于
 
 
->需要前置mod [malilib](https://modrinth.com/mod/malilib) 和 [worldeidt](https://modrinth.com/plugin/worldedit) 
+>需要前置mod [malilib](https://modrinth.com/mod/malilib) 和 [worldedit](https://modrinth.com/plugin/worldedit) 
 
 
 ## License
