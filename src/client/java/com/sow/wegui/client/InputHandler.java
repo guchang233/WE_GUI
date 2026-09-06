@@ -46,6 +46,17 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler {
     public boolean onKeyInput(KeyEvent input, boolean eventKeyState) {
         if (eventKeyState) {
             Minecraft mc = Minecraft.getInstance();
+            // 轮盘菜单打开时再按一次轮盘键关闭（切换行为），此时仍需拦截
+            if (mc.gui.screen() instanceof RadialMenuScreen
+                    && Configs.Hotkeys.OPEN_RADIAL.getKeybind().matches(input.key())) {
+                mc.setScreenAndShow(null);
+                return true;
+            }
+            // 其他屏幕打开时（如原版按键设置界面、聊天栏）不拦截按键事件，
+            // 否则会阻止将原版按键绑定系统的条目修改为 R/G 等本模组占用的按键
+            if (GuiUtils.getCurrentScreen() != null) {
+                return false;
+            }
             if (Configs.Hotkeys.OPEN_GUI.getKeybind().matches(input.key())) {
                 openMainPanel(mc);
                 return true;
@@ -59,18 +70,12 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler {
     }
 
     private static void openMainPanel(Minecraft mc) {
-        if (mc.player == null || GuiUtils.getCurrentScreen() != null) return;
+        if (mc.player == null) return;
         mc.setScreenAndShow(new WeCommandScreen());
     }
 
     private static void openRadialMenu(Minecraft mc) {
         if (mc.player == null) return;
-        // 已打开则关闭（R 键切换）
-        if (mc.gui.screen() instanceof RadialMenuScreen) {
-            mc.setScreenAndShow(null);
-            return;
-        }
-        if (GuiUtils.getCurrentScreen() != null) return;
         WeCommands.init();
         mc.setScreenAndShow(new RadialMenuScreen());
     }
